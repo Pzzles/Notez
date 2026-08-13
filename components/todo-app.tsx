@@ -1,7 +1,23 @@
 "use client"
 
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core"
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable"
+import { AnimatePresence } from "framer-motion"
 import { ListTodo } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { FilterBar } from "@/components/filter-bar"
 import { ProgressRing } from "@/components/progress-ring"
 import { ThemeToggle } from "@/components/theme-toggle"
@@ -10,20 +26,13 @@ import { TodoItem } from "@/components/todo-item"
 import { useTodos } from "@/hooks/use-todos"
 import type { Filter } from "@/lib/types"
 
-const PRIORITY_RANK = { high: 0, medium: 1, low: 2 } as const
-
 export function TodoApp() {
-  const {
-    todos,
-    hydrated,
-    addTodo,
-    toggleTodo,
-    updateTodo,
-    removeTodo,
-    clearCompleted,
-  } = useTodos()
+  const { todos, hydrated, addTodo, toggleTodo, updateTodo, removeTodo, clearCompleted, reorderTodos } =
+    useTodos()
   const [filter, setFilter] = useState<Filter>("all")
+  const [search, setSearch] = useState("")
   const [dateLabel, setDateLabel] = useState("")
+  const prevActiveCountRef = useRef<number | null>(null)
 
   useEffect(() => {
     setDateLabel(
@@ -38,20 +47,43 @@ export function TodoApp() {
   const completedCount = todos.filter((t) => t.completed).length
   const activeCount = todos.length - completedCount
 
+  // Confetti when all tasks are cleared
+  useEffect(() => {
+    if (!hydrated) return
+    if (prevActiveCountRef.current !== null && prevActiveCountRef.current > 0 && activeCount === 0 && todos.length > 0) {
+      import("canvas-confetti").then(({ default: fire }) => {
+        fire({ particleCount: 120, spread: 80, origin: { y: 0.55 } })
+      })
+    }
+    prevActiveCountRef.current = activeCount
+  }, [activeCount, hydrated, todos.length])
+
   const visible = useMemo(() => {
-    const filtered = todos.filter((t) => {
-      if (filter === "active") return !t.completed
-      if (filter === "completed") return t.completed
-      return true
-    })
-    // Active tasks first, then by priority, then newest.
-    return [...filtered].sort((a, b) => {
-      if (a.completed !== b.completed) return a.completed ? 1 : -1
-      if (a.priority !== b.priority)
-        return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
-      return b.createdAt - a.createdAt
-    })
-  }, [todos, filter])
+    return todos
+      .filter((t) => {
+        if (filter === "active" && t.completed) return false
+        if (filter === "completed" && !t.completed) return false
+        if (search && !t.title.toLowerCase().includes(search.toLowerCase())) return false
+        return true
+      })
+      .sort((a, b) => {
+        if (a.completed !== b.completed) return a.completed ? 1 : -1
+        return a.order - b.order
+      })
+  }, [todos, filter, search])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = visible.findIndex((t) => t.id === active.id)
+    const newIndex = visible.findIndex((t) => t.id === over.id)
+    reorderTodos(arrayMove(visible, oldIndex, newIndex))
+  }
 
   const subtitle =
     todos.length === 0
@@ -63,7 +95,7 @@ export function TodoApp() {
   return (
     <div className="flex min-h-dvh w-full items-center justify-center bg-background px-4 py-6 sm:px-6 sm:py-10">
       <div className="grid w-full max-w-4xl overflow-hidden rounded-3xl border border-border bg-card shadow-xl shadow-primary/5 lg:grid-cols-[300px_1fr]">
-        {/* Signature side panel */}
+        {/* Side panel */}
         <aside className="flex flex-col gap-7 bg-panel p-6 text-panel-foreground sm:p-8">
           <div className="flex items-center justify-between">
             <span
@@ -96,7 +128,7 @@ export function TodoApp() {
           </div>
 
           <p className="hidden text-xs text-panel-foreground/45 lg:block">
-            Saved on this device · works offline
+            Synced in real-time · drag to reorder
           </p>
         </aside>
 
@@ -112,30 +144,45 @@ export function TodoApp() {
                 activeCount={activeCount}
                 completedCount={completedCount}
                 onClearCompleted={clearCompleted}
+                search={search}
+                onSearchChange={setSearch}
               />
             </div>
           )}
 
           <main className="mt-4 min-h-[280px] flex-1">
             {!hydrated ? null : visible.length === 0 ? (
-              <EmptyState hasTodos={todos.length > 0} filter={filter} />
+              <EmptyState hasTodos={todos.length > 0} filter={filter} search={search} />
             ) : (
-              <ul className="flex max-h-[52vh] flex-col gap-2 overflow-y-auto pr-1 lg:max-h-[46vh]">
-                {visible.map((todo) => (
-                  <TodoItem
-                    key={todo.id}
-                    todo={todo}
-                    onToggle={toggleTodo}
-                    onRemove={removeTodo}
-                    onUpdate={updateTodo}
-                  />
-                ))}
-              </ul>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={visible.map((t) => t.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <ul className="flex max-h-[52vh] flex-col gap-2 overflow-y-auto pr-1 lg:max-h-[46vh]">
+                    <AnimatePresence initial={false}>
+                      {visible.map((todo) => (
+                        <TodoItem
+                          key={todo.id}
+                          todo={todo}
+                          onToggle={toggleTodo}
+                          onRemove={removeTodo}
+                          onUpdate={updateTodo}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </ul>
+                </SortableContext>
+              </DndContext>
             )}
           </main>
 
           <p className="mt-6 text-center text-xs text-muted-foreground lg:hidden">
-            Saved on this device · works offline
+            Synced in real-time · drag to reorder
           </p>
         </div>
       </div>
@@ -152,9 +199,18 @@ function Stat({ value, label }: { value: number; label: string }) {
   )
 }
 
-function EmptyState({ hasTodos, filter }: { hasTodos: boolean; filter: Filter }) {
+function EmptyState({
+  hasTodos,
+  filter,
+  search,
+}: {
+  hasTodos: boolean
+  filter: Filter
+  search: string
+}) {
   let message = "No tasks yet. Add one above to get started."
-  if (hasTodos && filter === "active") message = "Nothing active — you're all caught up."
+  if (search) message = `No tasks match "${search}".`
+  else if (hasTodos && filter === "active") message = "Nothing active — you're all caught up."
   else if (hasTodos && filter === "completed") message = "No completed tasks yet."
 
   return (

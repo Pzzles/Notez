@@ -6,6 +6,8 @@ export type Todo = {
   completed: boolean
   priority: Priority
   createdAt: number
+  dueDate?: number
+  order: number
 }
 
 export type Filter = "all" | "active" | "completed"
