@@ -47,7 +47,6 @@ export function TodoApp() {
   const completedCount = todos.filter((t) => t.completed).length
   const activeCount = todos.length - completedCount
 
-  // Confetti when all tasks are cleared
   useEffect(() => {
     if (!hydrated) return
     if (prevActiveCountRef.current !== null && prevActiveCountRef.current > 0 && activeCount === 0 && todos.length > 0) {
@@ -93,10 +92,35 @@ export function TodoApp() {
         : `${activeCount} ${activeCount === 1 ? "task" : "tasks"} to go`
 
   return (
-    <div className="flex min-h-dvh w-full items-center justify-center bg-background px-4 py-6 sm:px-6 sm:py-10">
-      <div className="grid w-full max-w-4xl overflow-hidden rounded-3xl border border-border bg-card shadow-xl shadow-primary/5 lg:grid-cols-[300px_1fr]">
-        {/* Side panel */}
-        <aside className="flex flex-col gap-7 bg-panel p-6 text-panel-foreground sm:p-8">
+    // Mobile: full-screen column, no outer padding. Desktop: centered card.
+    <div className="flex min-h-dvh flex-col bg-background sm:items-center sm:justify-center sm:px-6 sm:py-10">
+      <div className="flex w-full flex-1 flex-col overflow-hidden sm:max-w-4xl sm:flex-none sm:rounded-3xl sm:border sm:border-border sm:shadow-xl sm:shadow-primary/5 lg:grid lg:grid-cols-[300px_1fr]">
+
+        {/* Mobile / tablet compact header */}
+        <header className="flex shrink-0 items-center gap-3 bg-panel px-4 py-3 text-panel-foreground lg:hidden">
+          <ProgressRing
+            completed={completedCount}
+            total={todos.length}
+            size={44}
+            trackClassName="stroke-panel-foreground/15"
+            barClassName="stroke-panel-foreground"
+            labelClassName="text-panel-foreground"
+          />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-base font-semibold leading-none">Tasks</h1>
+            <p className="mt-0.5 truncate text-xs text-panel-foreground/70">{subtitle}</p>
+          </div>
+          <span
+            className="hidden shrink-0 text-xs text-panel-foreground/60 sm:block"
+            suppressHydrationWarning
+          >
+            {dateLabel}
+          </span>
+          <ThemeToggle />
+        </header>
+
+        {/* Desktop side panel */}
+        <aside className="hidden flex-col gap-7 bg-panel p-8 text-panel-foreground lg:flex">
           <div className="flex items-center justify-between">
             <span
               className="text-xs font-medium uppercase tracking-[0.18em] text-panel-foreground/60"
@@ -107,7 +131,7 @@ export function TodoApp() {
             <ThemeToggle />
           </div>
 
-          <div className="flex items-center gap-5 lg:flex-col lg:items-start lg:gap-6">
+          <div className="flex flex-col gap-6">
             <ProgressRing
               completed={completedCount}
               total={todos.length}
@@ -118,22 +142,22 @@ export function TodoApp() {
             />
             <div className="min-w-0">
               <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-              <p className="mt-1 text-sm text-panel-foreground/70 text-pretty">{subtitle}</p>
+              <p className="mt-1 text-pretty text-sm text-panel-foreground/70">{subtitle}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 lg:mt-auto">
+          <div className="mt-auto grid grid-cols-2 gap-3">
             <Stat value={activeCount} label="Active" />
             <Stat value={completedCount} label="Done" />
           </div>
 
-          <p className="hidden text-xs text-panel-foreground/45 lg:block">
+          <p className="text-xs text-panel-foreground/45">
             Synced in real-time · drag to reorder
           </p>
         </aside>
 
         {/* Task workspace */}
-        <div className="flex flex-col p-5 sm:p-8">
+        <div className="flex flex-1 flex-col p-4 sm:p-8">
           <TodoInput onAdd={addTodo} />
 
           {todos.length > 0 && (
@@ -150,7 +174,7 @@ export function TodoApp() {
             </div>
           )}
 
-          <main className="mt-4 min-h-[280px] flex-1">
+          <main className="mt-4 min-h-[200px] flex-1">
             {!hydrated ? null : visible.length === 0 ? (
               <EmptyState hasTodos={todos.length > 0} filter={filter} search={search} />
             ) : (
@@ -163,7 +187,7 @@ export function TodoApp() {
                   items={visible.map((t) => t.id)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <ul className="flex max-h-[52vh] flex-col gap-2 overflow-y-auto pr-1 lg:max-h-[46vh]">
+                  <ul className="flex flex-col gap-2 overflow-y-auto pr-1 lg:max-h-[46vh]">
                     <AnimatePresence initial={false}>
                       {visible.map((todo) => (
                         <TodoItem
@@ -218,7 +242,7 @@ function EmptyState({
       <div className="flex size-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
         <ListTodo className="size-6" />
       </div>
-      <p className="mt-3 max-w-[16rem] text-sm text-balance text-muted-foreground">{message}</p>
+      <p className="mt-3 max-w-[16rem] text-balance text-sm text-muted-foreground">{message}</p>
     </div>
   )
 }
