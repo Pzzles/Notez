@@ -16,19 +16,28 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { AnimatePresence } from "framer-motion"
-import { ListTodo } from "lucide-react"
+import { Bell, ListTodo } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { FilterBar } from "@/components/filter-bar"
 import { ProgressRing } from "@/components/progress-ring"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { TodoInput } from "@/components/todo-input"
 import { TodoItem } from "@/components/todo-item"
+import { useReminders } from "@/hooks/use-reminders"
+import { useTemplates } from "@/hooks/use-templates"
 import { useTodos } from "@/hooks/use-todos"
 import type { Filter } from "@/lib/types"
 
 export function TodoApp() {
-  const { todos, hydrated, addTodo, toggleTodo, updateTodo, removeTodo, clearCompleted, reorderTodos } =
-    useTodos()
+  const {
+    todos, hydrated,
+    addTodo, toggleTodo, updateTodo, removeTodo,
+    clearCompleted, reorderTodos,
+    addSubtask, toggleSubtask, removeSubtask,
+  } = useTodos()
+  const reminderCount = useReminders(todos)
+  const { templates, saveTemplate, removeTemplate } = useTemplates()
+
   const [filter, setFilter] = useState<Filter>("all")
   const [search, setSearch] = useState("")
   const [dateLabel, setDateLabel] = useState("")
@@ -36,17 +45,14 @@ export function TodoApp() {
 
   useEffect(() => {
     setDateLabel(
-      new Date().toLocaleDateString(undefined, {
-        weekday: "long",
-        month: "short",
-        day: "numeric",
-      }),
+      new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }),
     )
   }, [])
 
   const completedCount = todos.filter((t) => t.completed).length
   const activeCount = todos.length - completedCount
 
+  // Confetti when all tasks are done
   useEffect(() => {
     if (!hydrated) return
     if (prevActiveCountRef.current !== null && prevActiveCountRef.current > 0 && activeCount === 0 && todos.length > 0) {
@@ -57,8 +63,8 @@ export function TodoApp() {
     prevActiveCountRef.current = activeCount
   }, [activeCount, hydrated, todos.length])
 
-  const visible = useMemo(() => {
-    return todos
+  const visible = useMemo(() =>
+    todos
       .filter((t) => {
         if (filter === "active" && t.completed) return false
         if (filter === "completed" && !t.completed) return false
@@ -68,8 +74,8 @@ export function TodoApp() {
       .sort((a, b) => {
         if (a.completed !== b.completed) return a.completed ? 1 : -1
         return a.order - b.order
-      })
-  }, [todos, filter, search])
+      }),
+  [todos, filter, search])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -92,11 +98,10 @@ export function TodoApp() {
         : `${activeCount} ${activeCount === 1 ? "task" : "tasks"} to go`
 
   return (
-    // Mobile: full-screen column, no outer padding. Desktop: centered card.
     <div className="flex min-h-dvh flex-col bg-background sm:items-center sm:justify-center sm:px-6 sm:py-10">
-      <div className="flex w-full flex-1 flex-col overflow-hidden sm:max-w-4xl sm:flex-none sm:rounded-3xl sm:border sm:border-border sm:shadow-xl sm:shadow-primary/5 lg:grid lg:grid-cols-[300px_1fr]">
+      <div className="flex w-full flex-1 flex-col overflow-hidden sm:max-w-4xl sm:flex-none sm:rounded-3xl sm:border sm:border-border sm:shadow-xl sm:shadow-primary/5 lg:grid lg:grid-cols-[260px_1fr]">
 
-        {/* Mobile / tablet compact header */}
+        {/* ── Mobile header ─────────────────────────────────────── */}
         <header className="flex shrink-0 items-center gap-3 bg-panel px-4 py-3 text-panel-foreground lg:hidden">
           <ProgressRing
             completed={completedCount}
@@ -110,39 +115,45 @@ export function TodoApp() {
             <h1 className="text-base font-semibold leading-none">Tasks</h1>
             <p className="mt-0.5 truncate text-xs text-panel-foreground/70">{subtitle}</p>
           </div>
-          <span
-            className="hidden shrink-0 text-xs text-panel-foreground/60 sm:block"
-            suppressHydrationWarning
-          >
+          {reminderCount > 0 && (
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-white">
+              <Bell className="size-3" />
+            </span>
+          )}
+          <span className="hidden shrink-0 text-xs text-panel-foreground/60 sm:block" suppressHydrationWarning>
             {dateLabel}
           </span>
           <ThemeToggle />
         </header>
 
-        {/* Desktop side panel */}
+        {/* ── Desktop aside ─────────────────────────────────────── */}
         <aside className="hidden flex-col gap-7 bg-panel p-8 text-panel-foreground lg:flex">
           <div className="flex items-center justify-between">
-            <span
-              className="text-xs font-medium uppercase tracking-[0.18em] text-panel-foreground/60"
-              suppressHydrationWarning
-            >
+            <span className="text-xs font-medium uppercase tracking-[0.18em] text-panel-foreground/60" suppressHydrationWarning>
               {dateLabel || "Today"}
             </span>
-            <ThemeToggle />
+            <div className="flex items-center gap-2">
+              {reminderCount > 0 && (
+                <span className="flex items-center gap-1 rounded-full bg-destructive/20 px-2 py-0.5 text-[10px] font-semibold text-destructive">
+                  <Bell className="size-3" />{reminderCount}
+                </span>
+              )}
+              <ThemeToggle />
+            </div>
           </div>
 
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-5">
             <ProgressRing
               completed={completedCount}
               total={todos.length}
-              size={92}
+              size={88}
               trackClassName="stroke-panel-foreground/15"
               barClassName="stroke-panel-foreground"
               labelClassName="text-panel-foreground"
             />
-            <div className="min-w-0">
+            <div>
               <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
-              <p className="mt-1 text-pretty text-sm text-panel-foreground/70">{subtitle}</p>
+              <p className="mt-1 text-sm text-panel-foreground/70">{subtitle}</p>
             </div>
           </div>
 
@@ -151,14 +162,12 @@ export function TodoApp() {
             <Stat value={completedCount} label="Done" />
           </div>
 
-          <p className="text-xs text-panel-foreground/45">
-            Synced in real-time · drag to reorder
-          </p>
+          <p className="text-xs text-panel-foreground/40">Real-time sync · drag to reorder</p>
         </aside>
 
-        {/* Task workspace */}
+        {/* ── Task workspace ────────────────────────────────────── */}
         <div className="flex flex-1 flex-col p-4 sm:p-8">
-          <TodoInput onAdd={addTodo} />
+          <TodoInput onAdd={addTodo} templates={templates} onRemoveTemplate={removeTemplate} />
 
           {todos.length > 0 && (
             <div className="mt-4">
@@ -178,15 +187,8 @@ export function TodoApp() {
             {!hydrated ? null : visible.length === 0 ? (
               <EmptyState hasTodos={todos.length > 0} filter={filter} search={search} />
             ) : (
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-              >
-                <SortableContext
-                  items={visible.map((t) => t.id)}
-                  strategy={verticalListSortingStrategy}
-                >
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={visible.map((t) => t.id)} strategy={verticalListSortingStrategy}>
                   <ul className="flex flex-col gap-2 overflow-y-auto pr-1 lg:max-h-[46vh]">
                     <AnimatePresence initial={false}>
                       {visible.map((todo) => (
@@ -196,6 +198,10 @@ export function TodoApp() {
                           onToggle={toggleTodo}
                           onRemove={removeTodo}
                           onUpdate={updateTodo}
+                          onAddSubtask={addSubtask}
+                          onToggleSubtask={toggleSubtask}
+                          onRemoveSubtask={removeSubtask}
+                          onSaveAsTemplate={saveTemplate}
                         />
                       ))}
                     </AnimatePresence>
@@ -206,9 +212,10 @@ export function TodoApp() {
           </main>
 
           <p className="mt-6 text-center text-xs text-muted-foreground lg:hidden">
-            Synced in real-time · drag to reorder
+            Real-time sync · drag to reorder
           </p>
         </div>
+
       </div>
     </div>
   )
@@ -223,15 +230,7 @@ function Stat({ value, label }: { value: number; label: string }) {
   )
 }
 
-function EmptyState({
-  hasTodos,
-  filter,
-  search,
-}: {
-  hasTodos: boolean
-  filter: Filter
-  search: string
-}) {
+function EmptyState({ hasTodos, filter, search }: { hasTodos: boolean; filter: Filter; search: string }) {
   let message = "No tasks yet. Add one above to get started."
   if (search) message = `No tasks match "${search}".`
   else if (hasTodos && filter === "active") message = "Nothing active — you're all caught up."
