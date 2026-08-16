@@ -15,7 +15,7 @@ import {
   writeBatch,
 } from "firebase/firestore"
 import { db } from "@/lib/firebase"
-import type { Priority, Todo } from "@/lib/types"
+import type { Priority, Subtask, Todo } from "@/lib/types"
 
 type DbDoc = {
   id: string
@@ -25,6 +25,7 @@ type DbDoc = {
   createdAt: Timestamp | null
   dueDate?: number | null
   order?: number | null
+  subtasks?: Subtask[] | null
 }
 
 function fromDoc(d: DbDoc): Todo {
@@ -36,8 +37,8 @@ function fromDoc(d: DbDoc): Todo {
     priority: d.priority as Priority,
     createdAt,
     dueDate: d.dueDate ?? undefined,
-    // Negative createdAt so ascending sort puts newest first by default
     order: d.order ?? -createdAt,
+    subtasks: d.subtasks ?? [],
   }
 }
 
@@ -55,11 +56,7 @@ export function useTodos() {
     const unsub = onSnapshot(
       q,
       (snapshot) => {
-        setTodos(
-          snapshot.docs.map((d) =>
-            fromDoc({ id: d.id, ...(d.data() as Omit<DbDoc, "id">) }),
-          ),
-        )
+        setTodos(snapshot.docs.map((d) => fromDoc({ id: d.id, ...(d.data() as Omit<DbDoc, "id">) })))
         setHydrated(true)
       },
       (err) => {
@@ -80,13 +77,20 @@ export function useTodos() {
       createdAt: serverTimestamp(),
       dueDate: dueDate ?? null,
       order: -Date.now(),
+      subtasks: [],
     }).catch((err) => console.error("[Firestore] add failed:", err))
   }, [])
 
   const toggleTodo = useCallback((id: string) => {
     const todo = todosRef.current.find((t) => t.id === id)
     if (!todo) return
-    updateDoc(doc(db, "todos", id), { completed: !todo.completed }).catch((err) =>
+    const nowComplete = !todo.completed
+    const patch: { completed: boolean; subtasks?: Subtask[] } = { completed: nowComplete }
+    // When completing the parent, auto-complete all subtasks too
+    if (nowComplete && todo.subtasks.some((s) => !s.completed)) {
+      patch.subtasks = todo.subtasks.map((s) => ({ ...s, completed: true }))
+    }
+    updateDoc(doc(db, "todos", id), patch).catch((err) =>
       console.error("[Firestore] toggle failed:", err),
     )
   }, [])
@@ -94,7 +98,7 @@ export function useTodos() {
   const updateTodo = useCallback(
     (id: string, changes: { title?: string; dueDate?: number | null }) => {
       if (changes.title !== undefined && !changes.title.trim()) return
-      const patch: Record<string, unknown> = {}
+      const patch: { title?: string; dueDate?: number | null } = {}
       if (changes.title !== undefined) patch.title = changes.title.trim()
       if ("dueDate" in changes) patch.dueDate = changes.dueDate ?? null
       updateDoc(doc(db, "todos", id), patch).catch((err) =>
@@ -118,17 +122,52 @@ export function useTodos() {
   }, [])
 
   const reorderTodos = useCallback((reordered: Todo[]) => {
-    // Optimistic: assign new order values immediately so UI doesn't snap back
     setTodos((prev) => {
-      const reorderedIds = new Set(reordered.map((t) => t.id))
-      const withOrder = reordered.map((t, i) => ({ ...t, order: i * 1000 }))
-      const rest = prev.filter((t) => !reorderedIds.has(t.id))
-      return [...withOrder, ...rest]
+      const ids = new Set(reordered.map((t) => t.id))
+      return [...reordered.map((t, i) => ({ ...t, order: i * 1000 })), ...prev.filter((t) => !ids.has(t.id))]
     })
     const batch = writeBatch(db)
     reordered.forEach((t, i) => batch.update(doc(db, "todos", t.id), { order: i * 1000 }))
     batch.commit().catch((err) => console.error("[Firestore] reorder failed:", err))
   }, [])
 
-  return { todos, hydrated, addTodo, toggleTodo, updateTodo, removeTodo, clearCompleted, reorderTodos }
+  const addSubtask = useCallback((todoId: string, title: string) => {
+    const trimmed = title.trim()
+    if (!trimmed) return
+    const todo = todosRef.current.find((t) => t.id === todoId)
+    if (!todo) return
+    const subtask: Subtask = { id: crypto.randomUUID(), title: trimmed, completed: false }
+    updateDoc(doc(db, "todos", todoId), { subtasks: [...todo.subtasks, subtask] }).catch(console.error)
+  }, [])
+
+  const toggleSubtask = useCallback((todoId: string, subtaskId: string) => {
+    const todo = todosRef.current.find((t) => t.id === todoId)
+    if (!todo) return
+    const updated = todo.subtasks.map((s) =>
+      s.id === subtaskId ? { ...s, completed: !s.completed } : s,
+    )
+    updateDoc(doc(db, "todos", todoId), { subtasks: updated }).catch(console.error)
+  }, [])
+
+  const removeSubtask = useCallback((todoId: string, subtaskId: string) => {
+    const todo = todosRef.current.find((t) => t.id === todoId)
+    if (!todo) return
+    updateDoc(doc(db, "todos", todoId), {
+      subtasks: todo.subtasks.filter((s) => s.id !== subtaskId),
+    }).catch(console.error)
+  }, [])
+
+  return {
+    todos,
+    hydrated,
+    addTodo,
+    toggleTodo,
+    updateTodo,
+    removeTodo,
+    clearCompleted,
+    reorderTodos,
+    addSubtask,
+    toggleSubtask,
+    removeSubtask,
+  }
 }
