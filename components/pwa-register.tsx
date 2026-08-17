@@ -11,6 +11,9 @@ export function PwaRegister() {
       navigator.serviceWorker.register("/sw.js").catch(() => {
         // Registration can fail in unsupported/insecure contexts; ignore.
       })
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        window.location.reload()
+      })
     }
     if (document.readyState === "complete") {
       onLoad()

@@ -9,14 +9,57 @@ import {
   Check,
   ChevronDown,
   GripVertical,
+  Loader2,
+  MoreHorizontal,
   Pencil,
   Plus,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import type { Priority, Subtask, Todo } from "@/lib/types"
+
+async function generateSubtasks(
+  taskTitle: string,
+): Promise<{ title: string; subtasks: string[] }> {
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
+  if (!apiKey) throw new Error("Gemini API key not configured")
+
+  const prompt = `Break this task into 2-5 concrete, actionable subtasks. Keep ALL titles to 10 words or fewer — shorten the parent task title too if it exceeds that.
+
+Task: "${taskTitle}"
+
+Return ONLY a valid JSON object, no markdown, no extra text:
+{
+  "title": "parent task title, 10 words or fewer",
+  "subtasks": ["subtask one", "subtask two"]
+}`
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3 },
+      }),
+    },
+  )
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err?.error?.message ?? `Gemini error ${res.status}`)
+  }
+
+  const data = await res.json()
+  const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}"
+  const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim()
+  return JSON.parse(cleaned)
+}
 
 const PRIORITY_DOT: Record<Priority, string> = {
   low: "#22c55e",
@@ -65,15 +108,77 @@ export function TodoItem({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(todo.title)
   const [expanded, setExpanded] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const [mounted, setMounted] = useState(false)
   const [newSubtask, setNewSubtask] = useState("")
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiPreview, setAiPreview] = useState<{
+    title: string
+    subtasks: Array<{ text: string; selected: boolean }>
+  } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const subtaskInputRef = useRef<HTMLInputElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const datePickerRef = useRef<HTMLInputElement>(null)
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todo.id })
 
+  useEffect(() => setMounted(true), [])
   useEffect(() => { setDraft(todo.title) }, [todo.title])
   useEffect(() => { if (editing) { inputRef.current?.focus(); inputRef.current?.select() } }, [editing])
   useEffect(() => { if (expanded) subtaskInputRef.current?.focus() }, [expanded])
+
+  // Close menu on outside click, scroll, or resize
+  useEffect(() => {
+    if (!menuOpen) return
+    function handlePointer(e: MouseEvent) {
+      const target = e.target as Node
+      if (triggerRef.current?.contains(target) || dropdownRef.current?.contains(target)) return
+      setMenuOpen(false)
+    }
+    function handleClose() { setMenuOpen(false) }
+    document.addEventListener("mousedown", handlePointer)
+    window.addEventListener("scroll", handleClose, { capture: true })
+    window.addEventListener("resize", handleClose)
+    return () => {
+      document.removeEventListener("mousedown", handlePointer)
+      window.removeEventListener("scroll", handleClose, { capture: true })
+      window.removeEventListener("resize", handleClose)
+    }
+  }, [menuOpen])
+
+  async function handleAiSubtasks() {
+    setMenuOpen(false)
+    setAiLoading(true)
+    try {
+      const result = await generateSubtasks(todo.title)
+      setAiPreview({
+        title: result.title ?? todo.title,
+        subtasks: (result.subtasks ?? []).map((text: string) => ({ text, selected: true })),
+      })
+    } catch {
+      // silent — nothing to surface without a dedicated error area here
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  function applyAiPreview() {
+    if (!aiPreview) return
+    if (aiPreview.title !== todo.title) onUpdate(todo.id, { title: aiPreview.title })
+    aiPreview.subtasks.filter((s) => s.selected).forEach((s) => onAddSubtask(todo.id, s.text))
+    setAiPreview(null)
+    setExpanded(true)
+  }
+
+  function openMenu() {
+    const rect = triggerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setMenuOpen(true)
+  }
 
   function commit() { onUpdate(todo.id, { title: draft }); setEditing(false) }
   function cancel() { setDraft(todo.title); setEditing(false) }
@@ -83,7 +188,6 @@ export function TodoItem({
       s.id === subtaskId ? { ...s, completed: !s.completed } : s,
     )
     onToggleSubtask(todo.id, subtaskId)
-    // Auto-complete parent when last subtask is checked off
     if (updated.length > 0 && updated.every((s) => s.completed) && !todo.completed) {
       onToggle(todo.id)
     }
@@ -102,25 +206,25 @@ export function TodoItem({
       exit={{ opacity: 0, x: -12 }}
       transition={{ duration: isDragging ? 0 : 0.15 }}
       className={cn(
-        "group rounded-xl border border-border bg-card shadow-sm",
+        "group min-w-0 rounded-xl border border-border bg-card shadow-sm",
         isDragging && "shadow-lg ring-2 ring-primary/20",
         isOverdue && "ring-1 ring-destructive/40",
       )}
     >
       {/* Main row */}
-      <div className="flex items-center gap-2 px-2 py-2.5">
+      <div className="flex min-w-0 items-start gap-2 px-2 py-2.5">
         {/* Drag handle */}
         <button
           type="button"
           aria-label="Drag to reorder"
-          className="shrink-0 cursor-grab touch-none text-muted-foreground/30 opacity-0 transition-opacity group-hover:opacity-100 active:cursor-grabbing"
+          className="mt-0.5 shrink-0 cursor-grab touch-none text-muted-foreground/30 opacity-0 transition-opacity group-hover:opacity-100 active:cursor-grabbing"
           {...attributes}
           {...listeners}
         >
           <GripVertical className="size-4" />
         </button>
 
-        {/* Checkbox — spring animation on toggle */}
+        {/* Checkbox */}
         <motion.button
           key={`cb-${todo.completed}`}
           type="button"
@@ -132,7 +236,7 @@ export function TodoItem({
           animate={{ scale: 1 }}
           transition={{ type: "spring", stiffness: 500, damping: 18 }}
           className={cn(
-            "flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+            "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
             todo.completed
               ? "border-primary bg-primary text-primary-foreground"
               : "border-muted-foreground/40 hover:border-primary",
@@ -141,8 +245,8 @@ export function TodoItem({
           {todo.completed && <Check className="size-3.5" />}
         </motion.button>
 
-        {/* Title */}
-        <div className="min-w-0 flex-1">
+        {/* Title + metadata */}
+        <div className="min-w-0 flex-1 overflow-hidden">
           {editing ? (
             <input
               ref={inputRef}
@@ -160,108 +264,72 @@ export function TodoItem({
               className="w-full rounded-md bg-transparent text-sm outline-none ring-2 ring-ring/50"
             />
           ) : (
-            <button
-              type="button"
-              onDoubleClick={() => setEditing(true)}
+            <span
+              title={todo.title}
               className={cn(
-                "w-full truncate text-left text-sm",
+                "block truncate text-sm leading-snug",
                 todo.completed && "text-muted-foreground line-through",
               )}
-              title={todo.title}
             >
               {todo.title}
-            </button>
-          )}
-
-          {dueInfo && !todo.completed && (
-            <span className={cn(
-              "mt-0.5 block text-[11px] font-medium",
-              dueInfo.status === "overdue" && "text-destructive",
-              dueInfo.status === "today" && "text-amber-500",
-              dueInfo.status === "upcoming" && "text-muted-foreground",
-            )}>
-              {dueInfo.label}
             </span>
           )}
+
+          {/* Metadata row: due date + subtask count */}
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            {dueInfo && !todo.completed && (
+              <span className={cn(
+                "text-[11px] font-medium",
+                dueInfo.status === "overdue" && "text-destructive",
+                dueInfo.status === "today" && "text-amber-500",
+                dueInfo.status === "upcoming" && "text-muted-foreground",
+              )}>
+                {dueInfo.label}
+              </span>
+            )}
+            {todo.subtasks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="flex items-center gap-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                <span className="tabular-nums">{subtasksDone}/{todo.subtasks.length} subtasks</span>
+                <ChevronDown className={cn("size-3 transition-transform", expanded && "rotate-180")} />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Priority dot */}
         <span
           title={todo.priority}
-          className="hidden size-2 shrink-0 rounded-full sm:block"
+          className="mt-1.5 hidden size-2 shrink-0 rounded-full sm:block"
           style={{ backgroundColor: PRIORITY_DOT[todo.priority] }}
         />
 
-        {/* Actions */}
-        <div className="flex shrink-0 items-center">
-          {editing ? (
-            <>
-              <IconBtn onClick={commit} label="Save"><Check className="size-4" /></IconBtn>
-              <IconBtn onMouseDown={(e: React.MouseEvent) => e.preventDefault()} onClick={cancel} label="Cancel"><X className="size-4" /></IconBtn>
-            </>
-          ) : (
-            <>
-              {/* Subtask expand toggle */}
-              <button
-                type="button"
-                onClick={() => setExpanded((v) => !v)}
-                aria-label="Toggle subtasks"
-                className={cn(
-                  "flex h-8 items-center gap-0.5 rounded-lg px-1.5 text-muted-foreground transition-colors hover:bg-muted",
-                  expanded ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-                )}
-              >
-                {todo.subtasks.length > 0 && (
-                  <span className="text-[10px] tabular-nums">{subtasksDone}/{todo.subtasks.length}</span>
-                )}
-                <ChevronDown className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />
-              </button>
+        {/* Actions trigger */}
+        {!editing && (
+          <button
+            ref={triggerRef}
+            type="button"
+            onClick={aiLoading ? undefined : openMenu}
+            aria-label="Task actions"
+            aria-expanded={menuOpen}
+            className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {aiLoading
+              ? <Loader2 className="size-4 animate-spin" />
+              : <MoreHorizontal className="size-4" />}
+          </button>
+        )}
 
-              {/* Due date picker */}
-              <label
-                aria-label="Set due date"
-                className={cn(
-                  "flex size-8 cursor-pointer items-center justify-center rounded-lg opacity-0 transition-opacity hover:bg-muted focus-within:opacity-100 group-hover:opacity-100",
-                  dueInfo && "opacity-100",
-                )}
-              >
-                <CalendarDays className={cn(
-                  "size-4",
-                  dueInfo?.status === "overdue" && "text-destructive",
-                  dueInfo?.status === "today" && "text-amber-500",
-                  !dueInfo && "text-muted-foreground",
-                )} />
-                <input
-                  type="date"
-                  value={todo.dueDate ? toDateInputValue(todo.dueDate) : ""}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    onUpdate(todo.id, { dueDate: v ? new Date(v + "T00:00:00").getTime() : null })
-                  }}
-                  className="sr-only"
-                />
-              </label>
-
-              <IconBtn onClick={() => setEditing(true)} label="Edit task" className="opacity-0 group-hover:opacity-100">
-                <Pencil className="size-4" />
-              </IconBtn>
-              <IconBtn
-                onClick={() => onSaveAsTemplate(todo.title, todo.priority)}
-                label="Save as template"
-                className="opacity-0 hover:bg-accent hover:text-accent-foreground group-hover:opacity-100"
-              >
-                <Bookmark className="size-4" />
-              </IconBtn>
-              <IconBtn
-                onClick={() => onRemove(todo.id)}
-                label="Delete task"
-                className="opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-              >
-                <Trash2 className="size-4" />
-              </IconBtn>
-            </>
-          )}
-        </div>
+        {/* Edit confirm/cancel */}
+        {editing && (
+          <div className="flex shrink-0 items-center">
+            <IconBtn onClick={commit} label="Save"><Check className="size-4" /></IconBtn>
+            <IconBtn onMouseDown={(e: React.MouseEvent) => e.preventDefault()} onClick={cancel} label="Cancel"><X className="size-4" /></IconBtn>
+          </div>
+        )}
       </div>
 
       {/* Subtasks panel */}
@@ -284,7 +352,6 @@ export function TodoItem({
                     onRemove={() => onRemoveSubtask(todo.id, subtask.id)}
                   />
                 ))}
-
                 <form
                   onSubmit={(e) => {
                     e.preventDefault()
@@ -308,14 +375,190 @@ export function TodoItem({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Dropdown — portaled to body to escape any overflow:auto ancestor */}
+      {mounted && menuOpen && menuPos && createPortal(
+        <AnimatePresence>
+          <motion.div
+            ref={dropdownRef}
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ duration: 0.1 }}
+            style={{ position: "fixed", top: menuPos.top, right: menuPos.right, zIndex: 50 }}
+            className="w-48 overflow-hidden rounded-xl border border-border bg-card shadow-lg"
+          >
+            <MenuItem
+              icon={<Pencil className="size-3.5" />}
+              label="Edit"
+              onClick={() => { setEditing(true); setMenuOpen(false) }}
+            />
+
+            <MenuItem
+              icon={<Sparkles className="size-3.5" />}
+              label="AI subtasks"
+              onClick={handleAiSubtasks}
+            />
+
+            <MenuItem
+              icon={<ChevronDown className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />}
+              label={todo.subtasks.length > 0 ? `Subtasks (${subtasksDone}/${todo.subtasks.length})` : "Subtasks"}
+              onClick={() => { setExpanded((v) => !v); setMenuOpen(false) }}
+            />
+
+            <MenuItem
+              icon={<CalendarDays className={cn(
+                "size-3.5",
+                dueInfo?.status === "overdue" && "text-destructive",
+                dueInfo?.status === "today" && "text-amber-500",
+                !dueInfo && "text-muted-foreground",
+              )} />}
+              label={dueInfo ? `Due: ${dueInfo.label}` : "Set due date"}
+              onClick={() => {
+                try { (datePickerRef.current as any).showPicker() } catch { datePickerRef.current?.focus() }
+              }}
+            />
+            <input
+              ref={datePickerRef}
+              type="date"
+              value={todo.dueDate ? toDateInputValue(todo.dueDate) : ""}
+              onChange={(e) => {
+                const v = e.target.value
+                onUpdate(todo.id, { dueDate: v ? new Date(v + "T00:00:00").getTime() : null })
+                setMenuOpen(false)
+              }}
+              className="pointer-events-none absolute opacity-0"
+              style={{ width: 1, height: 1 }}
+            />
+
+            {todo.dueDate && (
+              <MenuItem
+                icon={<X className="size-3.5 text-muted-foreground" />}
+                label="Clear due date"
+                onClick={() => { onUpdate(todo.id, { dueDate: null }); setMenuOpen(false) }}
+              />
+            )}
+
+            <MenuItem
+              icon={<Bookmark className="size-3.5" />}
+              label="Save as template"
+              onClick={() => { onSaveAsTemplate(todo.title, todo.priority); setMenuOpen(false) }}
+            />
+
+            <div className="my-1 h-px bg-border" />
+
+            <MenuItem
+              icon={<Trash2 className="size-3.5" />}
+              label="Delete"
+              onClick={() => { onRemove(todo.id); setMenuOpen(false) }}
+              danger
+            />
+          </motion.div>
+        </AnimatePresence>,
+        document.body,
+      )}
+      {/* AI subtask preview */}
+      {mounted && aiPreview && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setAiPreview(null) }}
+        >
+          <div className="flex w-full max-w-sm flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4 text-primary" />
+                <h3 className="text-sm font-semibold">AI subtasks</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiPreview(null)}
+                aria-label="Close"
+                className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            {aiPreview.title !== todo.title && (
+              <div className="rounded-lg border border-border bg-background px-3 py-2">
+                <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Title shortened
+                </p>
+                <p className="text-sm font-medium">{aiPreview.title}</p>
+              </div>
+            )}
+
+            <ul className="flex flex-col gap-1.5">
+              {aiPreview.subtasks.map((s, i) => (
+                <li key={i}>
+                  <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-background px-3 py-2 transition-colors hover:bg-muted/40">
+                    <input
+                      type="checkbox"
+                      checked={s.selected}
+                      onChange={(e) =>
+                        setAiPreview((prev) =>
+                          prev
+                            ? { ...prev, subtasks: prev.subtasks.map((t, j) => j === i ? { ...t, selected: e.target.checked } : t) }
+                            : prev,
+                        )
+                      }
+                      className="size-4 accent-primary"
+                    />
+                    <span className="text-sm">{s.text}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setAiPreview(null)}
+                className="flex-1 rounded-xl border border-border py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applyAiPreview}
+                className="flex-1 rounded-xl bg-primary py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </motion.li>
   )
 }
 
+function MenuItem({
+  icon, label, onClick, danger = false,
+}: {
+  icon: React.ReactNode
+  label: string
+  onClick: () => void
+  danger?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-2.5 px-3 py-2 text-sm transition-colors hover:bg-muted",
+        danger ? "text-destructive hover:bg-destructive/10" : "text-foreground",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
+
 function SubtaskRow({
-  subtask,
-  onToggle,
-  onRemove,
+  subtask, onToggle, onRemove,
 }: {
   subtask: Subtask
   onToggle: () => void
@@ -354,13 +597,12 @@ function SubtaskRow({
 }
 
 function IconBtn({
-  children, onClick, onMouseDown, label, className,
+  children, onClick, onMouseDown, label,
 }: {
   children: React.ReactNode
   onClick?: () => void
   onMouseDown?: (e: React.MouseEvent) => void
   label: string
-  className?: string
 }) {
   return (
     <button
@@ -368,10 +610,7 @@ function IconBtn({
       onClick={onClick}
       onMouseDown={onMouseDown}
       aria-label={label}
-      className={cn(
-        "flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground",
-        className,
-      )}
+      className="flex size-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
     >
       {children}
     </button>

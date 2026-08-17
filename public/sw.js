@@ -1,5 +1,5 @@
 // Minimal offline-first service worker for the Tasks PWA.
-const CACHE = "tasks-cache-v1"
+const CACHE = "tasks-cache-v2"
 const PRECACHE = ["/", "/icon-512.png", "/manifest.webmanifest"]
 
 self.addEventListener("install", (event) => {
@@ -16,13 +16,23 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
       )
-      .then(() => self.clients.claim()),
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: "window" }))
+      // Force-reload all open tabs after a cache-busting SW update so stale
+      // module chunks (e.g. old deps) are never executed against a new server.
+      .then((clients) => Promise.all(clients.map((c) => c.navigate(c.url)))),
   )
 })
 
 self.addEventListener("fetch", (event) => {
   const { request } = event
   if (request.method !== "GET") return
+
+  const url = new URL(request.url)
+
+  // Never cache /_next/ JS/CSS chunks — the dev server and HTTP Cache handle
+  // freshness; intercepting them causes stale-module errors after deploys.
+  if (url.pathname.startsWith("/_next/")) return
 
   // Network-first for page navigations so content stays fresh, with an
   // offline fallback to the cached app shell.
@@ -39,8 +49,8 @@ self.addEventListener("fetch", (event) => {
     return
   }
 
-  // Cache-first for other same-origin GET requests (static assets).
-  if (new URL(request.url).origin === self.location.origin) {
+  // Cache-first for same-origin static assets (icons, manifest, etc).
+  if (url.origin === self.location.origin) {
     event.respondWith(
       caches.match(request).then(
         (cached) =>
