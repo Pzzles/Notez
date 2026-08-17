@@ -24,6 +24,7 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { TodoInput } from "@/components/todo-input"
 import { TodoItem } from "@/components/todo-item"
 import { TranscriptParser } from "@/components/transcript-parser"
+import { VoiceInput } from "@/components/voice-input"
 import { useReminders } from "@/hooks/use-reminders"
 import { useTemplates } from "@/hooks/use-templates"
 import { useTodos } from "@/hooks/use-todos"
@@ -172,6 +173,11 @@ export function TodoApp() {
             <div className="min-w-0 flex-1">
               <TodoInput onAdd={addTodo} templates={templates} onRemoveTemplate={removeTemplate} />
             </div>
+            <VoiceInput
+              onAddTasks={(tasks: { title: string; priority: Priority }[]) =>
+                tasks.forEach((t) => addTodo(t.title, t.priority))
+              }
+            />
             <TranscriptParser
               onAddTasks={(tasks: { title: string; priority: Priority }[]) =>
                 tasks.forEach((t) => addTodo(t.title, t.priority))

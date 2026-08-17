@@ -9,9 +9,11 @@ import {
   Check,
   ChevronDown,
   GripVertical,
+  Loader2,
   MoreHorizontal,
   Pencil,
   Plus,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react"
@@ -19,6 +21,45 @@ import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import type { Priority, Subtask, Todo } from "@/lib/types"
+
+async function generateSubtasks(
+  taskTitle: string,
+): Promise<{ title: string; subtasks: string[] }> {
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
+  if (!apiKey) throw new Error("Gemini API key not configured")
+
+  const prompt = `Break this task into 2-5 concrete, actionable subtasks. Keep ALL titles to 10 words or fewer — shorten the parent task title too if it exceeds that.
+
+Task: "${taskTitle}"
+
+Return ONLY a valid JSON object, no markdown, no extra text:
+{
+  "title": "parent task title, 10 words or fewer",
+  "subtasks": ["subtask one", "subtask two"]
+}`
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3 },
+      }),
+    },
+  )
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err?.error?.message ?? `Gemini error ${res.status}`)
+  }
+
+  const data = await res.json()
+  const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}"
+  const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim()
+  return JSON.parse(cleaned)
+}
 
 const PRIORITY_DOT: Record<Priority, string> = {
   low: "#22c55e",
@@ -71,6 +112,11 @@ export function TodoItem({
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
   const [mounted, setMounted] = useState(false)
   const [newSubtask, setNewSubtask] = useState("")
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiPreview, setAiPreview] = useState<{
+    title: string
+    subtasks: Array<{ text: string; selected: boolean }>
+  } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const subtaskInputRef = useRef<HTMLInputElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -102,6 +148,30 @@ export function TodoItem({
       window.removeEventListener("resize", handleClose)
     }
   }, [menuOpen])
+
+  async function handleAiSubtasks() {
+    setMenuOpen(false)
+    setAiLoading(true)
+    try {
+      const result = await generateSubtasks(todo.title)
+      setAiPreview({
+        title: result.title ?? todo.title,
+        subtasks: (result.subtasks ?? []).map((text: string) => ({ text, selected: true })),
+      })
+    } catch {
+      // silent — nothing to surface without a dedicated error area here
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  function applyAiPreview() {
+    if (!aiPreview) return
+    if (aiPreview.title !== todo.title) onUpdate(todo.id, { title: aiPreview.title })
+    aiPreview.subtasks.filter((s) => s.selected).forEach((s) => onAddSubtask(todo.id, s.text))
+    setAiPreview(null)
+    setExpanded(true)
+  }
 
   function openMenu() {
     const rect = triggerRef.current?.getBoundingClientRect()
@@ -242,12 +312,14 @@ export function TodoItem({
           <button
             ref={triggerRef}
             type="button"
-            onClick={openMenu}
+            onClick={aiLoading ? undefined : openMenu}
             aria-label="Task actions"
             aria-expanded={menuOpen}
             className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
-            <MoreHorizontal className="size-4" />
+            {aiLoading
+              ? <Loader2 className="size-4 animate-spin" />
+              : <MoreHorizontal className="size-4" />}
           </button>
         )}
 
@@ -323,6 +395,12 @@ export function TodoItem({
             />
 
             <MenuItem
+              icon={<Sparkles className="size-3.5" />}
+              label="AI subtasks"
+              onClick={handleAiSubtasks}
+            />
+
+            <MenuItem
               icon={<ChevronDown className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />}
               label={todo.subtasks.length > 0 ? `Subtasks (${subtasksDone}/${todo.subtasks.length})` : "Subtasks"}
               onClick={() => { setExpanded((v) => !v); setMenuOpen(false) }}
@@ -377,6 +455,79 @@ export function TodoItem({
             />
           </motion.div>
         </AnimatePresence>,
+        document.body,
+      )}
+      {/* AI subtask preview */}
+      {mounted && aiPreview && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setAiPreview(null) }}
+        >
+          <div className="flex w-full max-w-sm flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4 text-primary" />
+                <h3 className="text-sm font-semibold">AI subtasks</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiPreview(null)}
+                aria-label="Close"
+                className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            {aiPreview.title !== todo.title && (
+              <div className="rounded-lg border border-border bg-background px-3 py-2">
+                <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Title shortened
+                </p>
+                <p className="text-sm font-medium">{aiPreview.title}</p>
+              </div>
+            )}
+
+            <ul className="flex flex-col gap-1.5">
+              {aiPreview.subtasks.map((s, i) => (
+                <li key={i}>
+                  <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-background px-3 py-2 transition-colors hover:bg-muted/40">
+                    <input
+                      type="checkbox"
+                      checked={s.selected}
+                      onChange={(e) =>
+                        setAiPreview((prev) =>
+                          prev
+                            ? { ...prev, subtasks: prev.subtasks.map((t, j) => j === i ? { ...t, selected: e.target.checked } : t) }
+                            : prev,
+                        )
+                      }
+                      className="size-4 accent-primary"
+                    />
+                    <span className="text-sm">{s.text}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setAiPreview(null)}
+                className="flex-1 rounded-xl border border-border py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applyAiPreview}
+                className="flex-1 rounded-xl bg-primary py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>,
         document.body,
       )}
     </motion.li>
