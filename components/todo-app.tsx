@@ -199,7 +199,7 @@ export function TodoApp() {
             ) : (
               <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={visible.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-                  <ul className="flex flex-col gap-2 overflow-y-auto pr-1 lg:max-h-[46vh]">
+                  <ul className="flex flex-col gap-2 overflow-x-hidden overflow-y-auto pr-1 lg:max-h-[46vh]">
                     <AnimatePresence initial={false}>
                       {visible.map((todo) => (
                         <TodoItem

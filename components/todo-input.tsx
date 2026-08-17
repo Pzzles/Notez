@@ -1,7 +1,7 @@
 "use client"
 
 import { CalendarDays, Plus, X } from "lucide-react"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import type { Priority, Template } from "@/lib/types"
 
@@ -21,6 +21,7 @@ export function TodoInput({ onAdd, templates, onRemoveTemplate }: TodoInputProps
   const [value, setValue] = useState("")
   const [priority, setPriority] = useState<Priority>("medium")
   const [dueDate, setDueDate] = useState("")
+  const dateInputRef = useRef<HTMLInputElement>(null)
 
   function submit() {
     if (!value.trim()) return
@@ -74,17 +75,29 @@ export function TodoInput({ onAdd, templates, onRemoveTemplate }: TodoInputProps
         />
 
         {/* Calendar / due-date toggle */}
-        <label
+        <button
+          type="button"
           title={dueDate ? `Due: ${dueDate}` : "Set due date"}
           aria-label="Set due date"
+          onClick={() => {
+            try { (dateInputRef.current as any).showPicker() } catch { dateInputRef.current?.focus() }
+          }}
           className={cn(
-            "flex shrink-0 cursor-pointer items-center justify-center rounded-lg p-1.5 transition-colors",
+            "relative flex shrink-0 cursor-pointer items-center justify-center rounded-lg p-1.5 transition-colors",
             dueDate ? "text-primary" : "text-muted-foreground hover:text-foreground",
           )}
         >
           <CalendarDays className="size-4" />
-          <input type="date" value={dueDate} min={today} onChange={(e) => setDueDate(e.target.value)} className="sr-only" />
-        </label>
+        </button>
+        <input
+          ref={dateInputRef}
+          type="date"
+          value={dueDate}
+          min={today}
+          onChange={(e) => setDueDate(e.target.value)}
+          className="pointer-events-none absolute opacity-0"
+          style={{ width: 1, height: 1 }}
+        />
 
         {dueDate && (
           <button
