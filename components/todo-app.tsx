@@ -23,10 +23,11 @@ import { ProgressRing } from "@/components/progress-ring"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { TodoInput } from "@/components/todo-input"
 import { TodoItem } from "@/components/todo-item"
+import { TranscriptParser } from "@/components/transcript-parser"
 import { useReminders } from "@/hooks/use-reminders"
 import { useTemplates } from "@/hooks/use-templates"
 import { useTodos } from "@/hooks/use-todos"
-import type { Filter } from "@/lib/types"
+import type { Filter, Priority } from "@/lib/types"
 
 export function TodoApp() {
   const {
@@ -167,7 +168,16 @@ export function TodoApp() {
 
         {/* ── Task workspace ────────────────────────────────────── */}
         <div className="flex flex-1 flex-col p-4 sm:p-8">
-          <TodoInput onAdd={addTodo} templates={templates} onRemoveTemplate={removeTemplate} />
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <TodoInput onAdd={addTodo} templates={templates} onRemoveTemplate={removeTemplate} />
+            </div>
+            <TranscriptParser
+              onAddTasks={(tasks: { title: string; priority: Priority }[]) =>
+                tasks.forEach((t) => addTodo(t.title, t.priority))
+              }
+            />
+          </div>
 
           {todos.length > 0 && (
             <div className="mt-4">
