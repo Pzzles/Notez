@@ -20,6 +20,7 @@ import { Bell, ListTodo } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { FilterBar } from "@/components/filter-bar"
 import { ProgressRing } from "@/components/progress-ring"
+import { StandupGenerator } from "@/components/standup-generator"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { TodoInput } from "@/components/todo-input"
 import { TodoItem } from "@/components/todo-item"
@@ -169,20 +170,25 @@ export function TodoApp() {
 
         {/* ── Task workspace ────────────────────────────────────── */}
         <div className="flex flex-1 flex-col p-4 sm:p-8">
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
-              <TodoInput onAdd={addTodo} templates={templates} onRemoveTemplate={removeTemplate} />
+          <div className="flex flex-col gap-2">
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <TodoInput onAdd={addTodo} templates={templates} onRemoveTemplate={removeTemplate} />
+              </div>
             </div>
-            <VoiceInput
-              onAddTasks={(tasks: { title: string; priority: Priority }[]) =>
-                tasks.forEach((t) => addTodo(t.title, t.priority))
-              }
-            />
-            <TranscriptParser
-              onAddTasks={(tasks: { title: string; priority: Priority }[]) =>
-                tasks.forEach((t) => addTodo(t.title, t.priority))
-              }
-            />
+            <div className="flex items-center gap-2">
+              <VoiceInput
+                onAddTasks={(tasks: { title: string; priority: Priority }[]) =>
+                  tasks.forEach((t) => addTodo(t.title, t.priority))
+                }
+              />
+              <TranscriptParser
+                onAddTasks={(tasks: { title: string; priority: Priority }[]) =>
+                  tasks.forEach((t) => addTodo(t.title, t.priority))
+                }
+              />
+              <StandupGenerator todos={todos} />
+            </div>
           </div>
 
           {todos.length > 0 && (
