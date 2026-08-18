@@ -1,4 +1,3 @@
-import { Analytics } from "@vercel/analytics/next"
 import type { Metadata, Viewport } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import { PwaRegister } from "@/components/pwa-register"
@@ -59,7 +58,6 @@ export default function RootLayout({
           </ToastProvider>
         </ThemeProvider>
         <PwaRegister />
-        {process.env.NODE_ENV === "production" && <Analytics />}
       </body>
     </html>
   )
