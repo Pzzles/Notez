@@ -29,17 +29,46 @@ import { VoiceInput } from "@/components/voice-input"
 import { useReminders } from "@/hooks/use-reminders"
 import { useTemplates } from "@/hooks/use-templates"
 import { useTodos } from "@/hooks/use-todos"
+import { useToast } from "@/components/toast"
 import type { Filter, Priority } from "@/lib/types"
 
 export function TodoApp() {
   const {
     todos, hydrated,
     addTodo, toggleTodo, updateTodo, removeTodo,
-    clearCompleted, reorderTodos,
+    clearCompleted, togglePersistent, reorderTodos,
     addSubtask, toggleSubtask, removeSubtask,
   } = useTodos()
   const reminderCount = useReminders(todos)
   const { templates, saveTemplate, removeTemplate } = useTemplates()
+  const toast = useToast()
+
+  function handleAddTodo(title: string, priority: Priority, dueDate?: number) {
+    addTodo(title, priority, dueDate)
+    toast.success("Task added")
+  }
+
+  function handleRemoveTodo(id: string) {
+    removeTodo(id)
+    toast("Task deleted")
+  }
+
+  function handleClearCompleted() {
+    const count = todos.filter((t) => t.completed && !t.persistent).length
+    clearCompleted()
+    if (count > 0) toast(`${count} task${count > 1 ? "s" : ""} cleared`)
+  }
+
+  function handleTogglePersistent(id: string) {
+    const todo = todos.find((t) => t.id === id)
+    togglePersistent(id)
+    if (todo) toast(todo.persistent ? "Persistent off" : "Persistent on")
+  }
+
+  function handleSaveTemplate(title: string, priority: Priority) {
+    saveTemplate(title, priority)
+    toast.success("Saved as template")
+  }
 
   const [filter, setFilter] = useState<Filter>("all")
   const [search, setSearch] = useState("")
@@ -75,6 +104,7 @@ export function TodoApp() {
         return true
       })
       .sort((a, b) => {
+        if (a.persistent !== b.persistent) return a.persistent ? -1 : 1
         if (a.completed !== b.completed) return a.completed ? 1 : -1
         return a.order - b.order
       }),
@@ -173,19 +203,21 @@ export function TodoApp() {
           <div className="flex flex-col gap-2">
             <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
-                <TodoInput onAdd={addTodo} templates={templates} onRemoveTemplate={removeTemplate} />
+                <TodoInput onAdd={handleAddTodo} templates={templates} onRemoveTemplate={removeTemplate} />
               </div>
             </div>
             <div className="flex items-center gap-2">
               <VoiceInput
-                onAddTasks={(tasks: { title: string; priority: Priority }[]) =>
+                onAddTasks={(tasks: { title: string; priority: Priority }[]) => {
                   tasks.forEach((t) => addTodo(t.title, t.priority))
-                }
+                  if (tasks.length) toast.success(`${tasks.length} task${tasks.length > 1 ? "s" : ""} added`)
+                }}
               />
               <TranscriptParser
-                onAddTasks={(tasks: { title: string; priority: Priority }[]) =>
+                onAddTasks={(tasks: { title: string; priority: Priority }[]) => {
                   tasks.forEach((t) => addTodo(t.title, t.priority))
-                }
+                  if (tasks.length) toast.success(`${tasks.length} task${tasks.length > 1 ? "s" : ""} added`)
+                }}
               />
               <StandupGenerator todos={todos} />
             </div>
@@ -198,7 +230,7 @@ export function TodoApp() {
                 onChange={setFilter}
                 activeCount={activeCount}
                 completedCount={completedCount}
-                onClearCompleted={clearCompleted}
+                onClearCompleted={handleClearCompleted}
                 search={search}
                 onSearchChange={setSearch}
               />
@@ -218,12 +250,13 @@ export function TodoApp() {
                           key={todo.id}
                           todo={todo}
                           onToggle={toggleTodo}
-                          onRemove={removeTodo}
+                          onRemove={handleRemoveTodo}
                           onUpdate={updateTodo}
                           onAddSubtask={addSubtask}
                           onToggleSubtask={toggleSubtask}
                           onRemoveSubtask={removeSubtask}
-                          onSaveAsTemplate={saveTemplate}
+                          onSaveAsTemplate={handleSaveTemplate}
+                          onTogglePersistent={handleTogglePersistent}
                         />
                       ))}
                     </AnimatePresence>

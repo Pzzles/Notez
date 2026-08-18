@@ -15,6 +15,7 @@ export type Todo = {
   dueDate?: number
   order: number
   subtasks: Subtask[]
+  persistent?: boolean
 }
 
 export type Filter = "all" | "active" | "completed"

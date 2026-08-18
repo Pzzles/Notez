@@ -12,6 +12,7 @@ import {
   MoreHorizontal,
   Pencil,
   Plus,
+  Repeat,
   Trash2,
   X,
 } from "lucide-react"
@@ -52,6 +53,7 @@ type TodoItemProps = {
   onToggleSubtask: (todoId: string, subtaskId: string) => void
   onRemoveSubtask: (todoId: string, subtaskId: string) => void
   onSaveAsTemplate: (title: string, priority: Priority) => void
+  onTogglePersistent: (id: string) => void
 }
 
 export function TodoItem({
@@ -63,10 +65,12 @@ export function TodoItem({
   onToggleSubtask,
   onRemoveSubtask,
   onSaveAsTemplate,
+  onTogglePersistent,
 }: TodoItemProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(todo.title)
   const [expanded, setExpanded] = useState(false)
+  const [titleExpanded, setTitleExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
   const [mounted, setMounted] = useState(false)
@@ -118,7 +122,10 @@ export function TodoItem({
       s.id === subtaskId ? { ...s, completed: !s.completed } : s,
     )
     onToggleSubtask(todo.id, subtaskId)
-    if (updated.length > 0 && updated.every((s) => s.completed) && !todo.completed) {
+    const allDone = updated.length > 0 && updated.every((s) => s.completed)
+    if (allDone && !todo.completed && !todo.persistent) {
+      onToggle(todo.id)
+    } else if (!allDone && todo.completed) {
       onToggle(todo.id)
     }
   }
@@ -160,16 +167,17 @@ export function TodoItem({
           type="button"
           role="checkbox"
           aria-checked={todo.completed}
-          aria-label={todo.completed ? "Mark as not done" : "Mark as done"}
-          onClick={() => onToggle(todo.id)}
+          aria-label={todo.persistent ? "Disable persistence to mark as done" : todo.completed ? "Mark as not done" : "Mark as done"}
+          onClick={() => !todo.persistent && onToggle(todo.id)}
+          disabled={todo.persistent}
           initial={todo.completed ? { scale: 0.7 } : false}
           animate={{ scale: 1 }}
           transition={{ type: "spring", stiffness: 500, damping: 18 }}
           className={cn(
             "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-            todo.completed
-              ? "border-primary bg-primary text-primary-foreground"
-              : "border-muted-foreground/40 hover:border-primary",
+            todo.persistent && "cursor-not-allowed opacity-40",
+            !todo.persistent && todo.completed && "border-primary bg-primary text-primary-foreground",
+            !todo.persistent && !todo.completed && "border-muted-foreground/40 hover:border-primary",
           )}
         >
           {todo.completed && <Check className="size-3.5" />}
@@ -195,9 +203,14 @@ export function TodoItem({
             />
           ) : (
             <span
-              title={todo.title}
+              role="button"
+              tabIndex={0}
+              title={titleExpanded ? undefined : todo.title}
+              onClick={() => setTitleExpanded((v) => !v)}
+              onKeyDown={(e) => e.key === "Enter" && setTitleExpanded((v) => !v)}
               className={cn(
-                "block truncate text-sm leading-snug",
+                "block cursor-pointer select-none text-sm leading-snug",
+                titleExpanded ? "break-words whitespace-normal" : "truncate",
                 todo.completed && "text-muted-foreground line-through",
               )}
             >
@@ -236,6 +249,19 @@ export function TodoItem({
           className="mt-1.5 hidden size-2 shrink-0 rounded-full sm:block"
           style={{ backgroundColor: PRIORITY_DOT[todo.priority] }}
         />
+
+        {/* Persistent indicator */}
+        {todo.persistent && !editing && (
+          <button
+            type="button"
+            aria-label="Persistent task — disable in menu"
+            title="Persistent task"
+            onClick={openMenu}
+            className="mt-0.5 shrink-0 text-green-500"
+          >
+            <Repeat className="size-3.5" />
+          </button>
+        )}
 
         {/* Actions trigger */}
         {!editing && (
@@ -365,6 +391,12 @@ export function TodoItem({
               icon={<Bookmark className="size-3.5" />}
               label="Save as template"
               onClick={() => { onSaveAsTemplate(todo.title, todo.priority); setMenuOpen(false) }}
+            />
+
+            <MenuItem
+              icon={<Repeat className={cn("size-3.5", todo.persistent && "text-primary")} />}
+              label={todo.persistent ? "Persistent (on)" : "Persistent"}
+              onClick={() => { onTogglePersistent(todo.id); setMenuOpen(false) }}
             />
 
             <div className="my-1 h-px bg-border" />
