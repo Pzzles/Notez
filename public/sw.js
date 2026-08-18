@@ -1,10 +1,16 @@
 // Minimal offline-first service worker for the Tasks PWA.
-const CACHE = "tasks-cache-v3"
+const CACHE_PREFIX = "tasks-cache-"
+const CACHE = `${CACHE_PREFIX}v5`
 const PRECACHE = ["/", "/icon-512.png", "/manifest.webmanifest"]
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE)).catch(() => {}),
+    caches.open(CACHE).then((cache) =>
+      // One missing optional asset must not prevent the app shell from caching.
+      Promise.allSettled(
+        PRECACHE.map((url) => cache.add(new Request(url, { cache: "reload" }))),
+      ),
+    ),
   )
   self.skipWaiting()
 })
@@ -14,13 +20,14 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
+        Promise.all(
+          keys
+            .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE)
+            .map((key) => caches.delete(key)),
+        ),
       )
-      .then(() => self.clients.claim())
-      .then(() => self.clients.matchAll({ type: "window" }))
-      // Force-reload all open tabs after a cache-busting SW update so stale
-      // module chunks (e.g. old deps) are never executed against a new server.
-      .then((clients) => Promise.all(clients.map((c) => c.navigate(c.url)))),
+      // Take control without forcing a second, competing page navigation.
+      .then(() => self.clients.claim()),
   )
 })
 
@@ -29,19 +36,42 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return
 
   const url = new URL(request.url)
+  if (url.origin !== self.location.origin) return
 
-  // Never cache /_next/ JS/CSS chunks — the dev server and HTTP Cache handle
-  // freshness; intercepting them causes stale-module errors after deploys.
+  // Next.js build assets are content-addressed, so cache-first is safe.
+  if (url.pathname.startsWith("/_next/static/")) {
+    event.respondWith(
+      caches.match(request).then(
+        (cached) =>
+          cached ||
+          fetch(request).then((response) => {
+            if (response.ok) {
+              const copy = response.clone()
+              event.waitUntil(
+                caches.open(CACHE).then((cache) => cache.put(request, copy)),
+              )
+            }
+            return response
+          }),
+      ),
+    )
+    return
+  }
+
+  // Do not interfere with framework development or other internal requests.
   if (url.pathname.startsWith("/_next/")) return
 
-  // Network-first for page navigations so content stays fresh, with an
-  // offline fallback to the cached app shell.
+  // Prefer a fresh document, then fall back to the cached route or app shell.
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone()
-          caches.open(CACHE).then((cache) => cache.put(request, copy))
+          if (response.ok) {
+            const copy = response.clone()
+            event.waitUntil(
+              caches.open(CACHE).then((cache) => cache.put(request, copy)),
+            )
+          }
           return response
         })
         .catch(async () => (await caches.match(request)) || (await caches.match("/"))),
@@ -49,18 +79,20 @@ self.addEventListener("fetch", (event) => {
     return
   }
 
-  // Cache-first for same-origin static assets (icons, manifest, etc).
-  if (url.origin === self.location.origin) {
-    event.respondWith(
-      caches.match(request).then(
-        (cached) =>
-          cached ||
-          fetch(request).then((response) => {
+  // Cache same-origin static assets after a successful response.
+  event.respondWith(
+    caches.match(request).then(
+      (cached) =>
+        cached ||
+        fetch(request).then((response) => {
+          if (response.ok) {
             const copy = response.clone()
-            caches.open(CACHE).then((cache) => cache.put(request, copy))
-            return response
-          }),
-      ),
-    )
-  }
+            event.waitUntil(
+              caches.open(CACHE).then((cache) => cache.put(request, copy)),
+            )
+          }
+          return response
+        }),
+    ),
+  )
 })

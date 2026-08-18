@@ -8,12 +8,11 @@ export function PwaRegister() {
     if (!("serviceWorker" in navigator)) return
     // Register after load so it never blocks first paint.
     const onLoad = () => {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
-        // Registration can fail in unsupported/insecure contexts; ignore.
-      })
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        window.location.reload()
-      })
+      navigator.serviceWorker
+        .register("/sw.js", { updateViaCache: "none" })
+        .catch(() => {
+          // Registration can fail in unsupported/insecure contexts; ignore.
+        })
     }
     if (document.readyState === "complete") {
       onLoad()
