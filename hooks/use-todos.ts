@@ -26,6 +26,7 @@ type DbDoc = {
   dueDate?: number | null
   order?: number | null
   subtasks?: Subtask[] | null
+  persistent?: boolean | null
 }
 
 function fromDoc(d: DbDoc): Todo {
@@ -39,6 +40,7 @@ function fromDoc(d: DbDoc): Todo {
     dueDate: d.dueDate ?? undefined,
     order: d.order ?? -createdAt,
     subtasks: d.subtasks ?? [],
+    persistent: d.persistent ?? false,
   }
 }
 
@@ -115,10 +117,19 @@ export function useTodos() {
   }, [])
 
   const clearCompleted = useCallback(() => {
-    const completed = todosRef.current.filter((t) => t.completed)
+    const completed = todosRef.current.filter((t) => t.completed && !t.persistent)
+    if (!completed.length) return
     const batch = writeBatch(db)
     completed.forEach((t) => batch.delete(doc(db, "todos", t.id)))
     batch.commit().catch((err) => console.error("[Firestore] clearCompleted failed:", err))
+  }, [])
+
+  const togglePersistent = useCallback((id: string) => {
+    const todo = todosRef.current.find((t) => t.id === id)
+    if (!todo) return
+    updateDoc(doc(db, "todos", id), { persistent: !todo.persistent }).catch((err) =>
+      console.error("[Firestore] togglePersistent failed:", err),
+    )
   }, [])
 
   const reorderTodos = useCallback((reordered: Todo[]) => {
@@ -165,6 +176,7 @@ export function useTodos() {
     updateTodo,
     removeTodo,
     clearCompleted,
+    togglePersistent,
     reorderTodos,
     addSubtask,
     toggleSubtask,
