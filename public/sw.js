@@ -1,5 +1,5 @@
 // Minimal offline-first service worker for the Tasks PWA.
-const CACHE = "tasks-cache-v2"
+const CACHE = "tasks-cache-v3"
 const PRECACHE = ["/", "/icon-512.png", "/manifest.webmanifest"]
 
 self.addEventListener("install", (event) => {
