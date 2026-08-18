@@ -13,21 +13,39 @@ export function useReminders(todos: Todo[]): number {
     const due = todos.filter((t) => !t.completed && t.dueDate && t.dueDate <= todayEnd.getTime())
     setCount(due.length)
 
-    if (due.length === 0 || typeof window === "undefined" || !("Notification" in window)) return
+    if (
+      due.length === 0 ||
+      typeof window === "undefined" ||
+      !("Notification" in window) ||
+      Notification.permission !== "granted"
+    ) return
 
-    const fire = () => {
-      due.forEach((t) => {
-        if (firedRef.current.has(t.id)) return
-        firedRef.current.add(t.id)
-        new Notification("Task due today", { body: t.title })
-      })
+    const unfired = due.filter((todo) => !firedRef.current.has(todo.id))
+    if (unfired.length === 0) return
+
+    async function notify() {
+      const title = unfired.length === 1 ? "Task due today" : `${unfired.length} tasks due`
+      const body =
+        unfired.length === 1
+          ? unfired[0].title
+          : `${unfired[0].title} and ${unfired.length - 1} more`
+
+      try {
+        // Android Chrome requires notifications to be created by a service worker.
+        if ("serviceWorker" in navigator) {
+          const registration = await navigator.serviceWorker.ready
+          await registration.showNotification(title, { body, tag: "tasks-due" })
+        } else {
+          new Notification(title, { body, tag: "tasks-due" })
+        }
+        unfired.forEach((todo) => firedRef.current.add(todo.id))
+      } catch (error) {
+        // A notification failure must never take down the task list.
+        console.warn("[Notifications] reminder failed:", error)
+      }
     }
 
-    if (Notification.permission === "granted") {
-      fire()
-    } else if (Notification.permission !== "denied") {
-      Notification.requestPermission().then((p) => { if (p === "granted") fire() })
-    }
+    void notify()
   }, [todos])
 
   return count

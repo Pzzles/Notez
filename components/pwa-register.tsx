@@ -9,7 +9,7 @@ export function PwaRegister() {
     // Register after load so it never blocks first paint.
     const onLoad = () => {
       navigator.serviceWorker
-        .register("/sw.js", { updateViaCache: "none" })
+        .register("/sw.js?v=6", { scope: "/", updateViaCache: "none" })
         .catch(() => {
           // Registration can fail in unsupported/insecure contexts; ignore.
         })
