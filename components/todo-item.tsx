@@ -4,13 +4,16 @@ import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { AnimatePresence, motion } from "framer-motion"
 import {
+  Ban,
   Bookmark,
   CalendarDays,
   Check,
   ChevronDown,
   GripVertical,
   MoreHorizontal,
+  Pause,
   Pencil,
+  Play,
   Plus,
   Repeat,
   Trash2,
@@ -48,6 +51,8 @@ type TodoItemProps = {
   todo: Todo
   onToggle: (id: string) => void
   onRemove: (id: string) => void
+  onCancel: (id: string) => void
+  onPause: (id: string) => void
   onUpdate: (id: string, changes: { title?: string; dueDate?: number | null }) => void
   onAddSubtask: (todoId: string, title: string) => void
   onToggleSubtask: (todoId: string, subtaskId: string) => void
@@ -60,6 +65,8 @@ export function TodoItem({
   todo,
   onToggle,
   onRemove,
+  onCancel,
+  onPause,
   onUpdate,
   onAddSubtask,
   onToggleSubtask,
@@ -74,6 +81,7 @@ export function TodoItem({
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
   const [mounted, setMounted] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<"cancel" | "delete" | null>(null)
   const [newSubtask, setNewSubtask] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
   const subtaskInputRef = useRef<HTMLInputElement>(null)
@@ -94,9 +102,9 @@ export function TodoItem({
     function handlePointer(e: MouseEvent) {
       const target = e.target as Node
       if (triggerRef.current?.contains(target) || dropdownRef.current?.contains(target)) return
-      setMenuOpen(false)
+      closeMenu()
     }
-    function handleClose() { setMenuOpen(false) }
+    function handleClose() { closeMenu() }
     document.addEventListener("mousedown", handlePointer)
     window.addEventListener("scroll", handleClose, { capture: true })
     window.addEventListener("resize", handleClose)
@@ -111,7 +119,13 @@ export function TodoItem({
     const rect = triggerRef.current?.getBoundingClientRect()
     if (!rect) return
     setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    setConfirmAction(null)
     setMenuOpen(true)
+  }
+
+  function closeMenu() {
+    setMenuOpen(false)
+    setConfirmAction(null)
   }
 
   function commit() { onUpdate(todo.id, { title: draft }); setEditing(false) }
@@ -145,7 +159,8 @@ export function TodoItem({
       className={cn(
         "group min-w-0 rounded-xl border border-border bg-card shadow-sm",
         isDragging && "shadow-lg ring-2 ring-primary/20",
-        isOverdue && "ring-1 ring-destructive/40",
+        isOverdue && !todo.paused && "ring-1 ring-destructive/40",
+        todo.paused && "opacity-60",
       )}
     >
       {/* Main row */}
@@ -246,7 +261,7 @@ export function TodoItem({
         {/* Priority dot */}
         <span
           title={todo.priority}
-          className="mt-1.5 hidden size-2 shrink-0 rounded-full sm:block"
+          className="mt-1.5 block size-2 shrink-0 rounded-full"
           style={{ backgroundColor: PRIORITY_DOT[todo.priority] }}
         />
 
@@ -260,6 +275,19 @@ export function TodoItem({
             className="mt-0.5 shrink-0 text-green-500"
           >
             <Repeat className="size-3.5" />
+          </button>
+        )}
+
+        {/* Paused indicator */}
+        {todo.paused && !editing && (
+          <button
+            type="button"
+            aria-label="Paused task — resume in menu"
+            title="Paused"
+            onClick={openMenu}
+            className="mt-0.5 shrink-0 text-muted-foreground"
+          >
+            <Pause className="size-3.5" />
           </button>
         )}
 
@@ -345,13 +373,13 @@ export function TodoItem({
             <MenuItem
               icon={<Pencil className="size-3.5" />}
               label="Edit"
-              onClick={() => { setEditing(true); setMenuOpen(false) }}
+              onClick={() => { setEditing(true); closeMenu() }}
             />
 
             <MenuItem
               icon={<ChevronDown className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />}
               label={todo.subtasks.length > 0 ? `Subtasks (${subtasksDone}/${todo.subtasks.length})` : "Subtasks"}
-              onClick={() => { setExpanded((v) => !v); setMenuOpen(false) }}
+              onClick={() => { setExpanded((v) => !v); closeMenu() }}
             />
 
             <MenuItem
@@ -373,7 +401,7 @@ export function TodoItem({
               onChange={(e) => {
                 const v = e.target.value
                 onUpdate(todo.id, { dueDate: v ? new Date(v + "T00:00:00").getTime() : null })
-                setMenuOpen(false)
+                closeMenu()
               }}
               className="pointer-events-none absolute opacity-0"
               style={{ width: 1, height: 1 }}
@@ -383,30 +411,74 @@ export function TodoItem({
               <MenuItem
                 icon={<X className="size-3.5 text-muted-foreground" />}
                 label="Clear due date"
-                onClick={() => { onUpdate(todo.id, { dueDate: null }); setMenuOpen(false) }}
+                onClick={() => { onUpdate(todo.id, { dueDate: null }); closeMenu() }}
               />
             )}
 
             <MenuItem
               icon={<Bookmark className="size-3.5" />}
               label="Save as template"
-              onClick={() => { onSaveAsTemplate(todo.title, todo.priority); setMenuOpen(false) }}
+              onClick={() => { onSaveAsTemplate(todo.title, todo.priority); closeMenu() }}
             />
 
             <MenuItem
               icon={<Repeat className={cn("size-3.5", todo.persistent && "text-primary")} />}
               label={todo.persistent ? "Persistent (on)" : "Persistent"}
-              onClick={() => { onTogglePersistent(todo.id); setMenuOpen(false) }}
+              onClick={() => { onTogglePersistent(todo.id); closeMenu() }}
+            />
+
+            <MenuItem
+              icon={todo.paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
+              label={todo.paused ? "Resume" : "Pause"}
+              onClick={() => { onPause(todo.id); closeMenu() }}
             />
 
             <div className="my-1 h-px bg-border" />
 
-            <MenuItem
-              icon={<Trash2 className="size-3.5" />}
-              label="Delete"
-              onClick={() => { onRemove(todo.id); setMenuOpen(false) }}
-              danger
-            />
+            {confirmAction ? (
+              <div className="px-3 py-2.5">
+                <p className="mb-2.5 text-xs text-foreground">
+                  {confirmAction === "cancel"
+                    ? "Mark as cancelled? This counts toward your commitment stats."
+                    : "Delete this task permanently?"}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirmAction === "cancel") onCancel(todo.id)
+                      else onRemove(todo.id)
+                      closeMenu()
+                    }}
+                    className="flex-1 rounded-lg bg-destructive px-2 py-1.5 text-xs font-medium text-destructive-foreground transition-opacity hover:opacity-90"
+                  >
+                    {confirmAction === "cancel" ? "Cancel task" : "Delete"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmAction(null)}
+                    className="flex-1 rounded-lg border border-border px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted"
+                  >
+                    Back
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <MenuItem
+                  icon={<Ban className="size-3.5" />}
+                  label="Cancel task"
+                  onClick={() => setConfirmAction("cancel")}
+                  danger
+                />
+                <MenuItem
+                  icon={<Trash2 className="size-3.5" />}
+                  label="Delete"
+                  onClick={() => setConfirmAction("delete")}
+                  danger
+                />
+              </>
+            )}
           </motion.div>
         </AnimatePresence>,
         document.body,

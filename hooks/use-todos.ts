@@ -6,16 +6,20 @@ import {
   collection,
   deleteDoc,
   doc,
+  increment,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   Timestamp,
   updateDoc,
   writeBatch,
 } from "firebase/firestore"
 import { db } from "@/lib/firebase"
 import type { Priority, Subtask, Todo } from "@/lib/types"
+
+const statsRef = () => doc(db, "stats", "main")
 
 type DbDoc = {
   id: string
@@ -27,6 +31,7 @@ type DbDoc = {
   order?: number | null
   subtasks?: Subtask[] | null
   persistent?: boolean | null
+  paused?: boolean | null
 }
 
 function fromDoc(d: DbDoc): Todo {
@@ -41,6 +46,7 @@ function fromDoc(d: DbDoc): Todo {
     order: d.order ?? -createdAt,
     subtasks: d.subtasks ?? [],
     persistent: d.persistent ?? false,
+    paused: d.paused ?? false,
   }
 }
 
@@ -116,12 +122,20 @@ export function useTodos() {
     )
   }, [])
 
+  const cancelTodo = useCallback((id: string) => {
+    deleteDoc(doc(db, "todos", id))
+      .then(() => setDoc(statsRef(), { cancelled: increment(1) }, { merge: true }))
+      .catch((err) => console.error("[Firestore] cancel failed:", err))
+  }, [])
+
   const clearCompleted = useCallback(() => {
-    const completed = todosRef.current.filter((t) => t.completed && !t.persistent)
+    const completed = todosRef.current.filter((t) => t.completed && !t.persistent && !t.paused)
     if (!completed.length) return
     const batch = writeBatch(db)
     completed.forEach((t) => batch.delete(doc(db, "todos", t.id)))
-    batch.commit().catch((err) => console.error("[Firestore] clearCompleted failed:", err))
+    batch.commit()
+      .then(() => setDoc(statsRef(), { completed: increment(completed.length) }, { merge: true }))
+      .catch((err) => console.error("[Firestore] clearCompleted failed:", err))
   }, [])
 
   const togglePersistent = useCallback((id: string) => {
@@ -129,6 +143,14 @@ export function useTodos() {
     if (!todo) return
     updateDoc(doc(db, "todos", id), { persistent: !todo.persistent }).catch((err) =>
       console.error("[Firestore] togglePersistent failed:", err),
+    )
+  }, [])
+
+  const pauseTodo = useCallback((id: string) => {
+    const todo = todosRef.current.find((t) => t.id === id)
+    if (!todo) return
+    updateDoc(doc(db, "todos", id), { paused: !todo.paused }).catch((err) =>
+      console.error("[Firestore] pause failed:", err),
     )
   }, [])
 
@@ -175,8 +197,10 @@ export function useTodos() {
     toggleTodo,
     updateTodo,
     removeTodo,
+    cancelTodo,
     clearCompleted,
     togglePersistent,
+    pauseTodo,
     reorderTodos,
     addSubtask,
     toggleSubtask,
