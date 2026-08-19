@@ -16,9 +16,10 @@ export type Todo = {
   order: number
   subtasks: Subtask[]
   persistent?: boolean
+  paused?: boolean
 }
 
-export type Filter = "all" | "active" | "completed"
+export type Filter = "all" | "active" | "completed" | "paused"
 
 export type Template = {
   id: string
