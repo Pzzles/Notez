@@ -1,7 +1,7 @@
 // Minimal offline-first service worker for the Tasks PWA.
 const CACHE_PREFIX = "tasks-cache-"
-const CACHE = `${CACHE_PREFIX}v6`
-const PRECACHE = ["/", "/icon-512.png", "/manifest.webmanifest"]
+const CACHE = `${CACHE_PREFIX}v8`
+const PRECACHE = ["/", "/history", "/icon-512.png", "/manifest.webmanifest"]
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -71,6 +71,18 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url)
   if (url.origin !== self.location.origin) return
 
+  // Next uses these requests to stream route data during soft navigation.
+  // Caching them as ordinary files can make the router receive an old RSC
+  // payload and leave the visible page unchanged.
+  const isFrameworkDataRequest =
+    url.searchParams.has("_rsc") ||
+    request.headers.get("RSC") === "1" ||
+    request.headers.has("Next-Router-State-Tree") ||
+    request.headers.has("Next-Router-Prefetch") ||
+    request.headers.get("Accept")?.includes("text/x-component")
+
+  if (isFrameworkDataRequest) return
+
   if (url.pathname.startsWith("/_next/static/")) {
     event.respondWith(cacheFirst(request))
     return
@@ -84,5 +96,12 @@ self.addEventListener("fetch", (event) => {
     return
   }
 
-  event.respondWith(cacheFirst(request))
+  const isPublicAsset =
+    url.pathname === "/manifest.webmanifest" ||
+    url.pathname === "/icon-512.png" ||
+    url.pathname.endsWith(".svg") ||
+    url.pathname.endsWith(".png") ||
+    url.pathname.endsWith(".jpg")
+
+  if (isPublicAsset) event.respondWith(cacheFirst(request))
 })

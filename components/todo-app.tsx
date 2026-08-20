@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { AnimatePresence } from "framer-motion"
-import { Bell, ListTodo } from "lucide-react"
+import { Archive, Bell, ListTodo } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { FilterBar } from "@/components/filter-bar"
 import { NextMove } from "@/components/next-move"
@@ -176,6 +176,14 @@ export function TodoApp() {
           <span className="hidden shrink-0 text-xs text-panel-foreground/60 sm:block" suppressHydrationWarning>
             {dateLabel}
           </span>
+          <a
+            href="/history"
+            aria-label="Open task history"
+            title="Task history"
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-panel-foreground/15 bg-panel-foreground/10 text-panel-foreground transition-colors hover:bg-panel-foreground/20"
+          >
+            <Archive className="size-4" />
+          </a>
           <ThemeToggle />
         </header>
 
@@ -191,6 +199,14 @@ export function TodoApp() {
                   <Bell className="size-3" />{reminderCount}
                 </span>
               )}
+              <a
+                href="/history"
+                aria-label="Open task history"
+                title="Task history"
+                className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-panel-foreground/15 bg-panel-foreground/10 text-panel-foreground transition-colors hover:bg-panel-foreground/20"
+              >
+                <Archive className="size-4" />
+              </a>
               <ThemeToggle />
             </div>
           </div>

@@ -11,7 +11,6 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
   Timestamp,
   updateDoc,
   writeBatch,
@@ -32,6 +31,7 @@ type DbDoc = {
   subtasks?: Subtask[] | null
   persistent?: boolean | null
   paused?: boolean | null
+  completedAt?: Timestamp | null
 }
 
 function fromDoc(d: DbDoc): Todo {
@@ -47,6 +47,7 @@ function fromDoc(d: DbDoc): Todo {
     subtasks: d.subtasks ?? [],
     persistent: d.persistent ?? false,
     paused: d.paused ?? false,
+    completedAt: d.completedAt?.toMillis(),
   }
 }
 
@@ -86,6 +87,7 @@ export function useTodos() {
       dueDate: dueDate ?? null,
       order: -Date.now(),
       subtasks: [],
+      completedAt: null,
     }).catch((err) => console.error("[Firestore] add failed:", err))
   }, [])
 
@@ -93,7 +95,14 @@ export function useTodos() {
     const todo = todosRef.current.find((t) => t.id === id)
     if (!todo) return
     const nowComplete = !todo.completed
-    const patch: { completed: boolean; subtasks?: Subtask[] } = { completed: nowComplete }
+    const patch: {
+      completed: boolean
+      completedAt: ReturnType<typeof serverTimestamp> | null
+      subtasks?: Subtask[]
+    } = {
+      completed: nowComplete,
+      completedAt: nowComplete ? serverTimestamp() : null,
+    }
     // When completing the parent, auto-complete all subtasks too
     if (nowComplete && todo.subtasks.some((s) => !s.completed)) {
       patch.subtasks = todo.subtasks.map((s) => ({ ...s, completed: true }))
@@ -123,19 +132,25 @@ export function useTodos() {
   }, [])
 
   const cancelTodo = useCallback((id: string) => {
-    deleteDoc(doc(db, "todos", id))
-      .then(() => setDoc(statsRef(), { cancelled: increment(1) }, { merge: true }))
-      .catch((err) => console.error("[Firestore] cancel failed:", err))
+    const todo = todosRef.current.find((t) => t.id === id)
+    if (!todo) return
+    const batch = writeBatch(db)
+    batch.set(doc(db, "history", id), historyRecord(todo, "cancelled"))
+    batch.delete(doc(db, "todos", id))
+    batch.set(statsRef(), { cancelled: increment(1) }, { merge: true })
+    batch.commit().catch((err) => console.error("[Firestore] cancel failed:", err))
   }, [])
 
   const clearCompleted = useCallback(() => {
     const completed = todosRef.current.filter((t) => t.completed && !t.persistent && !t.paused)
     if (!completed.length) return
     const batch = writeBatch(db)
-    completed.forEach((t) => batch.delete(doc(db, "todos", t.id)))
-    batch.commit()
-      .then(() => setDoc(statsRef(), { completed: increment(completed.length) }, { merge: true }))
-      .catch((err) => console.error("[Firestore] clearCompleted failed:", err))
+    completed.forEach((todo) => {
+      batch.set(doc(db, "history", todo.id), historyRecord(todo, "done"))
+      batch.delete(doc(db, "todos", todo.id))
+    })
+    batch.set(statsRef(), { completed: increment(completed.length) }, { merge: true })
+    batch.commit().catch((err) => console.error("[Firestore] clearCompleted failed:", err))
   }, [])
 
   const togglePersistent = useCallback((id: string) => {
@@ -205,5 +220,23 @@ export function useTodos() {
     addSubtask,
     toggleSubtask,
     removeSubtask,
+  }
+}
+
+function historyRecord(todo: Todo, outcome: "done" | "cancelled") {
+  return {
+    title: todo.title,
+    priority: todo.priority,
+    createdAt: Timestamp.fromMillis(todo.createdAt),
+    dueDate: todo.dueDate ?? null,
+    order: todo.order,
+    subtasks: todo.subtasks,
+    persistent: todo.persistent ?? false,
+    outcome,
+    archivedAt: serverTimestamp(),
+    completedAt:
+      outcome === "done"
+        ? Timestamp.fromMillis(todo.completedAt ?? Date.now())
+        : null,
   }
 }
