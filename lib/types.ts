@@ -15,6 +15,7 @@ export type Todo = {
   dueDate?: number
   order: number
   subtasks: Subtask[]
+  notes?: string
   persistent?: boolean
   paused?: boolean
   completedAt?: number
