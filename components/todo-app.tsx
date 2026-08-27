@@ -15,8 +15,8 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
-import { AnimatePresence } from "framer-motion"
-import { Archive, Bell, ListTodo } from "lucide-react"
+import { AnimatePresence, motion } from "framer-motion"
+import { Archive, Bell, ChevronDown, ListTodo, Repeat } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { FilterBar } from "@/components/filter-bar"
 import { NextMove } from "@/components/next-move"
@@ -33,6 +33,7 @@ import { useTemplates } from "@/hooks/use-templates"
 import { useTodos } from "@/hooks/use-todos"
 import { useToast } from "@/components/toast"
 import type { Filter, Priority } from "@/lib/types"
+import { cn } from "@/lib/utils"
 
 export function TodoApp() {
   const {
@@ -128,17 +129,22 @@ export function TodoApp() {
       }),
   [todos, filter, search])
 
+  const persistentVisible = useMemo(() => visible.filter((t) => t.persistent), [visible])
+  const regularVisible = useMemo(() => visible.filter((t) => !t.persistent), [visible])
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
+  const [persistentExpanded, setPersistentExpanded] = useState(false)
+
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
-    const oldIndex = visible.findIndex((t) => t.id === active.id)
-    const newIndex = visible.findIndex((t) => t.id === over.id)
-    reorderTodos(arrayMove(visible, oldIndex, newIndex))
+    const oldIndex = regularVisible.findIndex((t) => t.id === active.id)
+    const newIndex = regularVisible.findIndex((t) => t.id === over.id)
+    reorderTodos(arrayMove(regularVisible, oldIndex, newIndex))
   }
 
   const subtitle =
@@ -286,30 +292,87 @@ export function TodoApp() {
             {!hydrated ? null : visible.length === 0 ? (
               <EmptyState hasTodos={todos.length > 0} filter={filter} search={search} />
             ) : (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={visible.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-                  <ul className="flex flex-col gap-2 overflow-x-hidden overflow-y-auto pr-1 lg:max-h-[46vh]">
+              <>
+                {persistentVisible.length > 0 && (
+                  <div className="mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setPersistentExpanded((v) => !v)}
+                      className="flex w-full items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/8 px-3 py-2 text-left transition-colors hover:bg-green-500/12"
+                    >
+                      <Repeat className="size-3.5 shrink-0 text-green-500" />
+                      <span className="flex-1 text-xs font-semibold text-green-700 dark:text-green-400">
+                        Persistent
+                      </span>
+                      <span className="rounded-full bg-green-500 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white">
+                        {persistentVisible.length}
+                      </span>
+                      <ChevronDown className={cn(
+                        "size-3.5 shrink-0 text-green-600 transition-transform dark:text-green-400",
+                        persistentExpanded && "rotate-180",
+                      )} />
+                    </button>
                     <AnimatePresence initial={false}>
-                      {visible.map((todo) => (
-                        <TodoItem
-                          key={todo.id}
-                          todo={todo}
-                          onToggle={toggleTodo}
-                          onRemove={handleRemoveTodo}
-                          onCancel={handleCancelTodo}
-                          onPause={handlePauseTodo}
-                          onUpdate={updateTodo}
-                          onAddSubtask={addSubtask}
-                          onToggleSubtask={toggleSubtask}
-                          onRemoveSubtask={removeSubtask}
-                          onSaveAsTemplate={handleSaveTemplate}
-                          onTogglePersistent={handleTogglePersistent}
-                        />
-                      ))}
+                      {persistentExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <ul className="mt-1.5 flex flex-col gap-2">
+                            {persistentVisible.map((todo) => (
+                              <TodoItem
+                                key={todo.id}
+                                todo={todo}
+                                onToggle={toggleTodo}
+                                onRemove={handleRemoveTodo}
+                                onCancel={handleCancelTodo}
+                                onPause={handlePauseTodo}
+                                onUpdate={updateTodo}
+                                onAddSubtask={addSubtask}
+                                onToggleSubtask={toggleSubtask}
+                                onRemoveSubtask={removeSubtask}
+                                onSaveAsTemplate={handleSaveTemplate}
+                                onTogglePersistent={handleTogglePersistent}
+                              />
+                            ))}
+                          </ul>
+                        </motion.div>
+                      )}
                     </AnimatePresence>
-                  </ul>
-                </SortableContext>
-              </DndContext>
+                  </div>
+                )}
+                {regularVisible.length > 0 ? (
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <SortableContext items={regularVisible.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                      <ul className="flex flex-col gap-2 overflow-x-hidden overflow-y-auto pr-1 lg:max-h-[46vh]">
+                        <AnimatePresence initial={false}>
+                          {regularVisible.map((todo) => (
+                            <TodoItem
+                              key={todo.id}
+                              todo={todo}
+                              onToggle={toggleTodo}
+                              onRemove={handleRemoveTodo}
+                              onCancel={handleCancelTodo}
+                              onPause={handlePauseTodo}
+                              onUpdate={updateTodo}
+                              onAddSubtask={addSubtask}
+                              onToggleSubtask={toggleSubtask}
+                              onRemoveSubtask={removeSubtask}
+                              onSaveAsTemplate={handleSaveTemplate}
+                              onTogglePersistent={handleTogglePersistent}
+                            />
+                          ))}
+                        </AnimatePresence>
+                      </ul>
+                    </SortableContext>
+                  </DndContext>
+                ) : persistentVisible.length === 0 ? (
+                  <EmptyState hasTodos={todos.length > 0} filter={filter} search={search} />
+                ) : null}
+              </>
             )}
           </main>
 
