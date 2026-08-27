@@ -33,21 +33,23 @@ import { useTemplates } from "@/hooks/use-templates"
 import { useTodos } from "@/hooks/use-todos"
 import { useToast } from "@/components/toast"
 import type { Filter, Priority } from "@/lib/types"
+import { savePattern } from "@/lib/familiarity"
 
 export function TodoApp() {
   const {
     todos, hydrated,
     addTodo, toggleTodo, updateTodo, removeTodo, cancelTodo,
     clearCompleted, togglePersistent, pauseTodo, reorderTodos,
-    addSubtask, toggleSubtask, removeSubtask,
+    updateNote, addSubtask, toggleSubtask, removeSubtask,
   } = useTodos()
   const reminderCount = useReminders(todos)
   const { templates, saveTemplate, removeTemplate } = useTemplates()
   const stats = useStats()
   const toast = useToast()
 
-  function handleAddTodo(title: string, priority: Priority, dueDate?: number) {
-    addTodo(title, priority, dueDate)
+  function handleAddTodo(title: string, priority: Priority, dueDate?: number, subtasks?: string[]) {
+    addTodo(title, priority, dueDate, subtasks)
+    if (subtasks?.length) savePattern(title, subtasks)
     toast.success("Task added")
   }
 
@@ -248,14 +250,20 @@ export function TodoApp() {
             </div>
             <div className="flex items-center gap-2">
               <VoiceInput
-                onAddTasks={(tasks: { title: string; priority: Priority }[]) => {
-                  tasks.forEach((t) => addTodo(t.title, t.priority))
+                onAddTasks={(tasks: { title: string; priority: Priority; subtasks: string[] }[]) => {
+                  tasks.forEach((t) => {
+                    addTodo(t.title, t.priority, undefined, t.subtasks)
+                    if (t.subtasks.length) savePattern(t.title, t.subtasks)
+                  })
                   if (tasks.length) toast.success(`${tasks.length} task${tasks.length > 1 ? "s" : ""} added`)
                 }}
               />
               <TranscriptParser
-                onAddTasks={(tasks: { title: string; priority: Priority }[]) => {
-                  tasks.forEach((t) => addTodo(t.title, t.priority))
+                onAddTasks={(tasks: { title: string; priority: Priority; subtasks: string[] }[]) => {
+                  tasks.forEach((t) => {
+                    addTodo(t.title, t.priority, undefined, t.subtasks)
+                    if (t.subtasks.length) savePattern(t.title, t.subtasks)
+                  })
                   if (tasks.length) toast.success(`${tasks.length} task${tasks.length > 1 ? "s" : ""} added`)
                 }}
               />
@@ -304,6 +312,7 @@ export function TodoApp() {
                           onRemoveSubtask={removeSubtask}
                           onSaveAsTemplate={handleSaveTemplate}
                           onTogglePersistent={handleTogglePersistent}
+                          onUpdateNote={updateNote}
                         />
                       ))}
                     </AnimatePresence>
