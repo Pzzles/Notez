@@ -295,23 +295,24 @@ export function TodoApp() {
               <>
                 {persistentVisible.length > 0 && (
                   <div className="mb-3">
-                    <button
-                      type="button"
-                      onClick={() => setPersistentExpanded((v) => !v)}
-                      className="flex w-full items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/8 px-3 py-2 text-left transition-colors hover:bg-green-500/12"
-                    >
+                    <div className="mb-1.5 flex items-center gap-2 px-1">
                       <Repeat className="size-3.5 shrink-0 text-green-500" />
-                      <span className="flex-1 text-xs font-semibold text-green-700 dark:text-green-400">
+                      <span className="flex-1 text-[10px] font-semibold uppercase tracking-widest text-green-600 dark:text-green-400">
                         Persistent
                       </span>
                       <span className="rounded-full bg-green-500 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white">
                         {persistentVisible.length}
                       </span>
-                      <ChevronDown className={cn(
-                        "size-3.5 shrink-0 text-green-600 transition-transform dark:text-green-400",
-                        persistentExpanded && "rotate-180",
-                      )} />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setPersistentExpanded((v) => !v)}
+                        aria-label={persistentExpanded ? "Collapse persistent tasks" : "Expand persistent tasks"}
+                        className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        {persistentExpanded ? "collapse" : "expand"}
+                        <ChevronDown className={cn("size-3 transition-transform", persistentExpanded && "rotate-180")} />
+                      </button>
+                    </div>
                     <AnimatePresence initial={false}>
                       {persistentExpanded && (
                         <motion.div
