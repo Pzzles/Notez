@@ -137,7 +137,7 @@ export function TodoApp() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  const [persistentExpanded, setPersistentExpanded] = useState(false)
+  const [persistentExpanded, setPersistentExpanded] = useState(true)
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
