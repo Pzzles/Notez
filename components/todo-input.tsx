@@ -1,9 +1,10 @@
 "use client"
 
-import { CalendarDays, Plus, X } from "lucide-react"
-import { useRef, useState } from "react"
+import { CalendarDays, Plus, Sparkles, X } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import type { Priority, Template } from "@/lib/types"
+import { useFamiliarity } from "@/hooks/use-familiarity"
 
 const PRIORITIES: { value: Priority; color: string; label: string }[] = [
   { value: "low",    color: "#22c55e", label: "Low"    },
@@ -12,7 +13,7 @@ const PRIORITIES: { value: Priority; color: string; label: string }[] = [
 ]
 
 type TodoInputProps = {
-  onAdd: (title: string, priority: Priority, dueDate?: number) => void
+  onAdd: (title: string, priority: Priority, dueDate?: number, subtasks?: string[]) => void
   templates: Template[]
   onRemoveTemplate: (id: string) => void
 }
@@ -21,13 +22,29 @@ export function TodoInput({ onAdd, templates, onRemoveTemplate }: TodoInputProps
   const [value, setValue] = useState("")
   const [priority, setPriority] = useState<Priority>("medium")
   const [dueDate, setDueDate] = useState("")
+  const [dismissed, setDismissed] = useState(false)
   const dateInputRef = useRef<HTMLInputElement>(null)
 
-  function submit() {
+  const suggestion = useFamiliarity(value)
+
+  // Reset dismissal whenever a new (different) suggestion arrives
+  const prevSuggestion = useRef<string | null>(null)
+  useEffect(() => {
+    const key = suggestion?.title ?? null
+    if (key !== prevSuggestion.current) {
+      prevSuggestion.current = key
+      setDismissed(false)
+    }
+  }, [suggestion])
+
+  const showSuggestion = suggestion && !dismissed
+
+  function submit(subtasks?: string[]) {
     if (!value.trim()) return
-    onAdd(value, priority, dueDate ? new Date(dueDate + "T00:00:00").getTime() : undefined)
+    onAdd(value, priority, dueDate ? new Date(dueDate + "T00:00:00").getTime() : undefined, subtasks)
     setValue("")
     setDueDate("")
+    setDismissed(false)
   }
 
   const today = new Date().toLocaleDateString("en-CA")
@@ -113,7 +130,7 @@ export function TodoInput({ onAdd, templates, onRemoveTemplate }: TodoInputProps
         {/* Add */}
         <button
           type="button"
-          onClick={submit}
+          onClick={() => submit()}
           disabled={!value.trim()}
           aria-label="Add task"
           className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
@@ -121,6 +138,47 @@ export function TodoInput({ onAdd, templates, onRemoveTemplate }: TodoInputProps
           <Plus className="size-4" />
         </button>
       </div>
+
+      {/* Familiarity suggestion */}
+      {showSuggestion && (
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 px-3 py-2.5">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-primary">
+              <Sparkles className="size-3.5" />
+              <span>
+                Looks familiar — {suggestion.usedCount > 1 ? `you've done this ${suggestion.usedCount}×` : "last time you added subtasks"}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDismissed(true)}
+              aria-label="Dismiss suggestion"
+              className="text-muted-foreground/50 hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+          <div className="mb-2.5 flex flex-wrap gap-1.5">
+            {suggestion.subtasks.map((sub, i) => (
+              <span
+                key={i}
+                className="rounded-md border border-border bg-card px-2 py-0.5 text-xs text-muted-foreground"
+              >
+                {sub}
+              </span>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => submit(suggestion.subtasks)}
+            disabled={!value.trim()}
+            className="flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
+          >
+            <Plus className="size-3.5" />
+            Add with {suggestion.subtasks.length} subtask{suggestion.subtasks.length !== 1 ? "s" : ""}
+          </button>
+        </div>
+      )}
 
       {/* Template chips */}
       {templates.length > 0 && (

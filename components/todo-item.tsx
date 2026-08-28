@@ -9,7 +9,11 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  FileText,
   GripVertical,
+  Loader2,
+  Mic,
+  MicOff,
   MoreHorizontal,
   Pause,
   Pencil,
@@ -23,6 +27,34 @@ import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import type { Priority, Subtask, Todo } from "@/lib/types"
+
+async function transcribeAudio(blob: Blob): Promise<string> {
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
+  if (!apiKey) throw new Error("Gemini API key not configured")
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve((reader.result as string).split(",")[1])
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [
+          { inline_data: { mime_type: blob.type || "audio/webm", data: base64 } },
+          { text: "Transcribe this audio exactly as spoken. Return only the transcribed text, no commentary." },
+        ] }],
+        generationConfig: { temperature: 0 },
+      }),
+    },
+  )
+  if (!res.ok) throw new Error(`Gemini error ${res.status}`)
+  const data = await res.json()
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? ""
+}
 
 const PRIORITY_DOT: Record<Priority, string> = {
   low: "#22c55e",
@@ -59,6 +91,7 @@ type TodoItemProps = {
   onRemoveSubtask: (todoId: string, subtaskId: string) => void
   onSaveAsTemplate: (title: string, priority: Priority) => void
   onTogglePersistent: (id: string) => void
+  onUpdateNote: (id: string, notes: string) => void
 }
 
 export function TodoItem({
@@ -73,21 +106,29 @@ export function TodoItem({
   onRemoveSubtask,
   onSaveAsTemplate,
   onTogglePersistent,
+  onUpdateNote,
 }: TodoItemProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(todo.title)
   const [expanded, setExpanded] = useState(false)
   const [titleExpanded, setTitleExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number; flipped: boolean } | null>(null)
   const [mounted, setMounted] = useState(false)
   const [confirmAction, setConfirmAction] = useState<"cancel" | "delete" | null>(null)
   const [newSubtask, setNewSubtask] = useState("")
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [notesValue, setNotesValue] = useState(todo.notes ?? "")
+  const [noteRecording, setNoteRecording] = useState(false)
+  const [noteTranscribing, setNoteTranscribing] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const subtaskInputRef = useRef<HTMLInputElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const datePickerRef = useRef<HTMLInputElement>(null)
+  const noteRecorderRef = useRef<MediaRecorder | null>(null)
+  const noteChunksRef = useRef<Blob[]>([])
+  const noteSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todo.id })
 
@@ -95,6 +136,7 @@ export function TodoItem({
   useEffect(() => { setDraft(todo.title) }, [todo.title])
   useEffect(() => { if (editing) { inputRef.current?.focus(); inputRef.current?.select() } }, [editing])
   useEffect(() => { if (expanded) subtaskInputRef.current?.focus() }, [expanded])
+  useEffect(() => { setNotesValue(todo.notes ?? "") }, [todo.notes])
 
   // Close menu on outside click, scroll, or resize
   useEffect(() => {
@@ -115,10 +157,60 @@ export function TodoItem({
     }
   }, [menuOpen])
 
+  function scheduleNoteSave(value: string) {
+    if (noteSaveTimerRef.current) clearTimeout(noteSaveTimerRef.current)
+    noteSaveTimerRef.current = setTimeout(() => onUpdateNote(todo.id, value), 800)
+  }
+
+  async function startNoteRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : ""
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      noteChunksRef.current = []
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) noteChunksRef.current.push(e.data) }
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop())
+        const blob = new Blob(noteChunksRef.current, { type: recorder.mimeType || "audio/webm" })
+        processNoteAudio(blob)
+      }
+      noteRecorderRef.current = recorder
+      recorder.start(250)
+      setNoteRecording(true)
+    } catch { /* mic permission denied */ }
+  }
+
+  function stopNoteRecording() {
+    const r = noteRecorderRef.current
+    noteRecorderRef.current = null
+    if (r && r.state !== "inactive") r.stop()
+    setNoteRecording(false)
+  }
+
+  async function processNoteAudio(blob: Blob) {
+    setNoteTranscribing(true)
+    try {
+      const text = await transcribeAudio(blob)
+      if (text) {
+        const updated = notesValue ? `${notesValue}\n${text}` : text
+        setNotesValue(updated)
+        scheduleNoteSave(updated)
+      }
+    } catch { /* transcription failed */ } finally {
+      setNoteTranscribing(false)
+    }
+  }
+
   function openMenu() {
     const rect = triggerRef.current?.getBoundingClientRect()
     if (!rect) return
-    setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+    const spaceBelow = window.innerHeight - rect.bottom
+    const flipped = spaceBelow < 320
+    setMenuPos(
+      flipped
+        ? { bottom: window.innerHeight - rect.top + 4, right: window.innerWidth - rect.right, flipped: true }
+        : { top: rect.bottom + 4, right: window.innerWidth - rect.right, flipped: false }
+    )
     setConfirmAction(null)
     setMenuOpen(true)
   }
@@ -291,6 +383,19 @@ export function TodoItem({
           </button>
         )}
 
+        {/* Notes indicator */}
+        {todo.notes && !editing && (
+          <button
+            type="button"
+            onClick={() => setNotesOpen((v) => !v)}
+            aria-label="View notes"
+            title="Notes"
+            className={cn("mt-0.5 shrink-0 transition-colors", notesOpen ? "text-primary" : "text-muted-foreground/40 hover:text-muted-foreground")}
+          >
+            <FileText className="size-3.5" />
+          </button>
+        )}
+
         {/* Actions trigger */}
         {!editing && (
           <button
@@ -358,17 +463,59 @@ export function TodoItem({
         )}
       </AnimatePresence>
 
+      {/* Notes panel */}
+      <AnimatePresence initial={false}>
+        {notesOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden"
+          >
+            <div className="border-t border-border/50 bg-muted/20 px-3 pb-2.5 pt-2">
+              <div className="relative pl-7 pr-8">
+                <textarea
+                  value={notesValue}
+                  onChange={(e) => { setNotesValue(e.target.value); scheduleNoteSave(e.target.value) }}
+                  placeholder="Add notes…"
+                  rows={3}
+                  className="w-full resize-none bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/40"
+                />
+                <button
+                  type="button"
+                  onClick={noteRecording ? stopNoteRecording : startNoteRecording}
+                  disabled={noteTranscribing}
+                  aria-label={noteRecording ? "Stop dictating" : "Dictate note"}
+                  className={cn(
+                    "absolute right-0 top-0 flex size-6 items-center justify-center rounded-lg transition-colors",
+                    noteRecording ? "animate-pulse text-destructive" : "text-muted-foreground/40 hover:text-muted-foreground",
+                    noteTranscribing && "opacity-50",
+                  )}
+                >
+                  {noteTranscribing
+                    ? <Loader2 className="size-3.5 animate-spin" />
+                    : noteRecording
+                      ? <MicOff className="size-3.5" />
+                      : <Mic className="size-3.5" />}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Dropdown — portaled to body to escape any overflow:auto ancestor */}
       {mounted && menuOpen && menuPos && createPortal(
         <AnimatePresence>
           <motion.div
             ref={dropdownRef}
-            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            initial={{ opacity: 0, scale: 0.95, y: menuPos.flipped ? 4 : -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            exit={{ opacity: 0, scale: 0.95, y: menuPos.flipped ? 4 : -4 }}
             transition={{ duration: 0.1 }}
-            style={{ position: "fixed", top: menuPos.top, right: menuPos.right, zIndex: 50 }}
-            className="w-48 overflow-hidden rounded-xl border border-border bg-card shadow-lg"
+            style={{ position: "fixed", top: menuPos.top, bottom: menuPos.bottom, right: menuPos.right, zIndex: 50, maxHeight: "min(90vh, 400px)", overflowY: "auto" }}
+            className="w-48 rounded-xl border border-border bg-card shadow-lg"
           >
             <MenuItem
               icon={<Pencil className="size-3.5" />}
@@ -380,6 +527,12 @@ export function TodoItem({
               icon={<ChevronDown className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />}
               label={todo.subtasks.length > 0 ? `Subtasks (${subtasksDone}/${todo.subtasks.length})` : "Subtasks"}
               onClick={() => { setExpanded((v) => !v); closeMenu() }}
+            />
+
+            <MenuItem
+              icon={<FileText className={cn("size-3.5", notesOpen && "text-primary")} />}
+              label="Notes"
+              onClick={() => { setNotesOpen((v) => !v); closeMenu() }}
             />
 
             <MenuItem

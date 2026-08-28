@@ -8,11 +8,12 @@ import type { Priority } from "@/lib/types"
 type ExtractedTask = {
   title: string
   priority: Priority
+  subtasks: string[]
   selected: boolean
 }
 
 type TranscriptParserProps = {
-  onAddTasks: (tasks: { title: string; priority: Priority }[]) => void
+  onAddTasks: (tasks: { title: string; priority: Priority; subtasks: string[] }[]) => void
 }
 
 async function extractTasksFromTranscript(transcript: string): Promise<ExtractedTask[]> {
@@ -26,6 +27,7 @@ Find ALL tasks, action items, and follow-ups assigned to or belonging to "Pule" 
 Return ONLY a valid JSON array with no other text. Each item:
 - "title": clean actionable task (e.g. "Review the onboarding doc" not "Pule needs to review the onboarding doc")
 - "priority": "low", "medium", or "high" based on urgency or importance mentioned
+- "subtasks": array of short actionable sub-steps explicitly mentioned for this task ([] if none mentioned)
 
 If nothing is found, return [].
 
@@ -56,9 +58,10 @@ ${transcript}`
   const cleaned = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim()
   const parsed = JSON.parse(cleaned)
 
-  return parsed.map((t: { title: string; priority: string }) => ({
+  return parsed.map((t: { title: string; priority: string; subtasks?: string[] }) => ({
     title: t.title,
     priority: (["low", "medium", "high"].includes(t.priority) ? t.priority : "medium") as Priority,
+    subtasks: Array.isArray(t.subtasks) ? t.subtasks.filter((s: unknown) => typeof s === "string" && (s as string).trim()) : [],
     selected: true,
   }))
 }
@@ -186,9 +189,9 @@ export function TranscriptParser({ onAddTasks }: TranscriptParserProps) {
                   Found {tasks.length} task{tasks.length !== 1 ? "s" : ""} — select the ones to add
                 </p>
 
-                <ul className="flex flex-col gap-1.5">
+                <ul className="flex max-h-72 flex-col gap-1.5 overflow-y-auto">
                   {tasks.map((task, i) => (
-                    <li key={i}>
+                    <li key={i} className="flex flex-col gap-1">
                       <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5 transition-colors hover:bg-muted/40">
                         <input
                           type="checkbox"
@@ -211,6 +214,16 @@ export function TranscriptParser({ onAddTasks }: TranscriptParserProps) {
                           {task.priority}
                         </span>
                       </label>
+                      {task.subtasks.length > 0 && (
+                        <ul className="ml-7 flex flex-col gap-0.5">
+                          {task.subtasks.map((sub, j) => (
+                            <li key={j} className={cn("flex items-center gap-2 rounded-lg px-2 py-1 text-xs", !task.selected && "opacity-40")}>
+                              <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
+                              <span className="text-muted-foreground">{sub}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </li>
                   ))}
                 </ul>

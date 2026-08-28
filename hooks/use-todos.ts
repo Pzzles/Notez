@@ -76,9 +76,13 @@ export function useTodos() {
     return unsub
   }, [])
 
-  const addTodo = useCallback(async (title: string, priority: Priority, dueDate?: number) => {
+  const addTodo = useCallback(async (title: string, priority: Priority, dueDate?: number, initialSubtasks?: string[]) => {
     const trimmed = title.trim()
     if (!trimmed) return
+    const subtasks: Subtask[] = (initialSubtasks ?? [])
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => ({ id: crypto.randomUUID(), title: s, completed: false }))
     await addDoc(collection(db, "todos"), {
       title: trimmed,
       priority,
@@ -86,7 +90,7 @@ export function useTodos() {
       createdAt: serverTimestamp(),
       dueDate: dueDate ?? null,
       order: -Date.now(),
-      subtasks: [],
+      subtasks,
       completedAt: null,
     }).catch((err) => console.error("[Firestore] add failed:", err))
   }, [])
@@ -179,6 +183,10 @@ export function useTodos() {
     batch.commit().catch((err) => console.error("[Firestore] reorder failed:", err))
   }, [])
 
+  const updateNote = useCallback((todoId: string, notes: string) => {
+    updateDoc(doc(db, "todos", todoId), { notes }).catch(console.error)
+  }, [])
+
   const addSubtask = useCallback((todoId: string, title: string) => {
     const trimmed = title.trim()
     if (!trimmed) return
@@ -217,6 +225,7 @@ export function useTodos() {
     togglePersistent,
     pauseTodo,
     reorderTodos,
+    updateNote,
     addSubtask,
     toggleSubtask,
     removeSubtask,

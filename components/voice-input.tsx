@@ -8,6 +8,7 @@ import type { Priority } from "@/lib/types"
 type ExtractedTask = {
   title: string
   priority: Priority
+  subtasks: string[]
   selected: boolean
 }
 
@@ -36,11 +37,19 @@ Return ONLY a valid JSON object — no markdown, no explanation:
 {
   "transcript": "verbatim transcription",
   "tasks": [
-    {"title": "concise actionable task starting with a verb", "priority": "low|medium|high"}
+    {
+      "title": "concise actionable task starting with a verb",
+      "priority": "low|medium|high",
+      "subtasks": ["subtask 1", "subtask 2"]
+    }
   ]
 }
 
-Infer priority from urgency words. If no tasks are found return {"transcript": "...", "tasks": []}.`
+Rules:
+- Infer priority from urgency words.
+- Only add subtasks when the speaker explicitly lists steps, components, or sub-items for a task. Leave subtasks as [] when there are none.
+- Each subtask should be a short actionable phrase.
+- If no tasks are found return {"transcript": "...", "tasks": []}.`
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`,
@@ -71,16 +80,17 @@ Infer priority from urgency words. If no tasks are found return {"transcript": "
 
   return {
     transcript: parsed.transcript ?? "",
-    tasks: (parsed.tasks ?? []).map((t: { title: string; priority: string }) => ({
+    tasks: (parsed.tasks ?? []).map((t: { title: string; priority: string; subtasks?: string[] }) => ({
       title: t.title,
       priority: (["low", "medium", "high"].includes(t.priority) ? t.priority : "medium") as Priority,
+      subtasks: Array.isArray(t.subtasks) ? t.subtasks.filter((s: unknown) => typeof s === "string" && s.trim()) : [],
       selected: true,
     })),
   }
 }
 
 type VoiceInputProps = {
-  onAddTasks: (tasks: { title: string; priority: Priority }[]) => void
+  onAddTasks: (tasks: { title: string; priority: Priority; subtasks: string[] }[]) => void
 }
 
 export function VoiceInput({ onAddTasks }: VoiceInputProps) {
@@ -254,9 +264,9 @@ export function VoiceInput({ onAddTasks }: VoiceInputProps) {
                 <p className="text-xs text-muted-foreground">
                   Found {tasks.length} task{tasks.length !== 1 ? "s" : ""} — select the ones to add
                 </p>
-                <ul className="flex max-h-60 flex-col gap-1.5 overflow-y-auto">
+                <ul className="flex max-h-72 flex-col gap-1.5 overflow-y-auto">
                   {tasks.map((task, i) => (
-                    <li key={i}>
+                    <li key={i} className="flex flex-col gap-1">
                       <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5 transition-colors hover:bg-muted/40">
                         <input
                           type="checkbox"
@@ -279,6 +289,16 @@ export function VoiceInput({ onAddTasks }: VoiceInputProps) {
                           {task.priority}
                         </span>
                       </label>
+                      {task.subtasks.length > 0 && (
+                        <ul className="ml-7 flex flex-col gap-0.5">
+                          {task.subtasks.map((sub, j) => (
+                            <li key={j} className={cn("flex items-center gap-2 rounded-lg px-2 py-1 text-xs", !task.selected && "opacity-40")}>
+                              <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
+                              <span className="text-muted-foreground">{sub}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </li>
                   ))}
                 </ul>
