@@ -322,25 +322,6 @@ export function TodoApp() {
                       </button>
                     </div>
                     <AnimatePresence initial={false}>
-<<<<<<< HEAD
-                      {visible.map((todo) => (
-                        <TodoItem
-                          key={todo.id}
-                          todo={todo}
-                          onToggle={toggleTodo}
-                          onRemove={handleRemoveTodo}
-                          onCancel={handleCancelTodo}
-                          onPause={handlePauseTodo}
-                          onUpdate={updateTodo}
-                          onAddSubtask={addSubtask}
-                          onToggleSubtask={toggleSubtask}
-                          onRemoveSubtask={removeSubtask}
-                          onSaveAsTemplate={handleSaveTemplate}
-                          onTogglePersistent={handleTogglePersistent}
-                          onUpdateNote={updateNote}
-                        />
-                      ))}
-=======
                       {persistentExpanded && (
                         <motion.div
                           initial={{ height: 0, opacity: 0 }}
@@ -364,12 +345,12 @@ export function TodoApp() {
                                 onRemoveSubtask={removeSubtask}
                                 onSaveAsTemplate={handleSaveTemplate}
                                 onTogglePersistent={handleTogglePersistent}
+                                onUpdateNote={updateNote}
                               />
                             ))}
                           </ul>
                         </motion.div>
                       )}
->>>>>>> feat/persistent-layout
                     </AnimatePresence>
                   </div>
                 )}
