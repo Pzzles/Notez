@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { AnimatePresence, motion } from "framer-motion"
-import { Archive, Bell, ChevronDown, ListTodo, Repeat } from "lucide-react"
+import { Archive, Bell, CalendarClock, ChevronDown, ListTodo, RefreshCw, Repeat } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { FilterBar } from "@/components/filter-bar"
 import { NextMove } from "@/components/next-move"
@@ -27,12 +27,13 @@ import { TodoInput } from "@/components/todo-input"
 import { TodoItem } from "@/components/todo-item"
 import { TranscriptParser } from "@/components/transcript-parser"
 import { VoiceInput } from "@/components/voice-input"
+import { useRecurring } from "@/hooks/use-recurring"
 import { useReminders } from "@/hooks/use-reminders"
 import { useStats } from "@/hooks/use-stats"
 import { useTemplates } from "@/hooks/use-templates"
 import { useTodos } from "@/hooks/use-todos"
 import { useToast } from "@/components/toast"
-import type { Filter, Priority } from "@/lib/types"
+import type { Filter, Priority, Todo } from "@/lib/types"
 import { savePattern } from "@/lib/familiarity"
 import { cn } from "@/lib/utils"
 
@@ -41,8 +42,9 @@ export function TodoApp() {
     todos, hydrated,
     addTodo, toggleTodo, updateTodo, removeTodo, cancelTodo,
     clearCompleted, togglePersistent, pauseTodo, reorderTodos,
-    updateNote, addSubtask, toggleSubtask, removeSubtask,
+    updateNote, clearRecurringFromTodo, addSubtask, toggleSubtask, removeSubtask,
   } = useTodos()
+  const { rules, createRule, deleteRule } = useRecurring(hydrated, todos)
   const reminderCount = useReminders(todos)
   const { templates, saveTemplate, removeTemplate } = useTemplates()
   const stats = useStats()
@@ -85,6 +87,18 @@ export function TodoApp() {
   function handleSaveTemplate(title: string, priority: Priority) {
     saveTemplate(title, priority)
     toast.success("Saved as template")
+  }
+
+  function handleSetRecurring(id: string) {
+    const todo = todos.find((t) => t.id === id)
+    if (todo) setRecurringSetupTodo(todo)
+  }
+
+  function handleRemoveRecurring(id: string) {
+    const todo = todos.find((t) => t.id === id)
+    if (todo?.recurringRuleId) deleteRule(todo.recurringRuleId)
+    clearRecurringFromTodo(id)
+    toast("Recurring removed")
   }
 
   const [filter, setFilter] = useState<Filter>("all")
@@ -140,6 +154,35 @@ export function TodoApp() {
   )
 
   const [persistentExpanded, setPersistentExpanded] = useState(true)
+  const [recurringSetupTodo, setRecurringSetupTodo] = useState<Todo | null>(null)
+
+  const lockedTodoIds = useMemo(() => {
+    const locked = new Set<string>()
+    const byRule = new Map<string, Todo[]>()
+    todos.forEach((t) => {
+      if (t.recurringRuleId && !t.completed) {
+        const arr = byRule.get(t.recurringRuleId) ?? []
+        arr.push(t)
+        byRule.set(t.recurringRuleId, arr)
+      }
+    })
+    byRule.forEach((instances) => {
+      if (instances.length <= 1) return
+      const sorted = [...instances].sort((a, b) => (a.instanceDue ?? 0) - (b.instanceDue ?? 0))
+      sorted.slice(1).forEach((t) => locked.add(t.id))
+    })
+    return locked
+  }, [todos])
+
+  const monthlyAlerts = useMemo(() => {
+    if (new Date().getDate() !== 24) return []
+    return rules
+      .map((r) => ({
+        rule: r,
+        count: todos.filter((t) => t.recurringRuleId === r.id && !t.completed).length,
+      }))
+      .filter(({ count }) => count >= 2)
+  }, [rules, todos])
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -296,6 +339,25 @@ export function TodoApp() {
             </div>
           )}
 
+          {monthlyAlerts.length > 0 && (
+            <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+              <div className="flex items-start gap-2">
+                <CalendarClock className="mt-0.5 size-4 shrink-0 text-amber-500" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">Monthly reminder — 24th</p>
+                  <ul className="mt-1 space-y-0.5">
+                    {monthlyAlerts.map(({ rule, count }) => (
+                      <li key={rule.id} className="text-[11px] text-muted-foreground">
+                        <span className="font-medium text-foreground">{rule.title}</span>
+                        {" "}— {count} instance{count > 1 ? "s" : ""} pending
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
           <main className="mt-4 min-h-[200px] flex-1">
             {!hydrated ? null : visible.length === 0 ? (
               <EmptyState hasTodos={todos.length > 0} filter={filter} search={search} />
@@ -346,6 +408,9 @@ export function TodoApp() {
                                 onSaveAsTemplate={handleSaveTemplate}
                                 onTogglePersistent={handleTogglePersistent}
                                 onUpdateNote={updateNote}
+                                isLocked={lockedTodoIds.has(todo.id)}
+                                onSetRecurring={handleSetRecurring}
+                                onRemoveRecurring={handleRemoveRecurring}
                               />
                             ))}
                           </ul>
@@ -373,6 +438,10 @@ export function TodoApp() {
                               onRemoveSubtask={removeSubtask}
                               onSaveAsTemplate={handleSaveTemplate}
                               onTogglePersistent={handleTogglePersistent}
+                              onUpdateNote={updateNote}
+                              isLocked={lockedTodoIds.has(todo.id)}
+                              onSetRecurring={handleSetRecurring}
+                              onRemoveRecurring={handleRemoveRecurring}
                             />
                           ))}
                         </AnimatePresence>
@@ -398,6 +467,23 @@ export function TodoApp() {
         </div>
 
       </div>
+      {recurringSetupTodo && (
+        <RecurringSetupModal
+          todo={recurringSetupTodo}
+          onConfirm={async (opts) => {
+            await createRule(
+              recurringSetupTodo.title,
+              recurringSetupTodo.priority,
+              recurringSetupTodo.subtasks,
+              opts,
+              recurringSetupTodo.id,
+            )
+            setRecurringSetupTodo(null)
+            toast.success("Recurring schedule set")
+          }}
+          onClose={() => setRecurringSetupTodo(null)}
+        />
+      )}
     </div>
   )
 }
@@ -424,6 +510,112 @@ function EmptyState({ hasTodos, filter, search }: { hasTodos: boolean; filter: F
         <ListTodo className="size-6" />
       </div>
       <p className="mt-3 max-w-[16rem] text-balance text-sm text-muted-foreground">{message}</p>
+    </div>
+  )
+}
+
+function RecurringSetupModal({
+  todo,
+  onConfirm,
+  onClose,
+}: {
+  todo: Todo
+  onConfirm: (opts: { frequencyDays?: number; dayOfMonth?: number }) => void
+  onClose: () => void
+}) {
+  const [type, setType] = useState<"days" | "monthly">("days")
+  const [days, setDays] = useState("2")
+  const [dom, setDom] = useState("24")
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (type === "days") {
+      const n = parseInt(days, 10)
+      if (!n || n < 1) return
+      onConfirm({ frequencyDays: n })
+    } else {
+      const n = parseInt(dom, 10)
+      if (!n || n < 1 || n > 31) return
+      onConfirm({ dayOfMonth: n })
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl border border-border bg-card p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start gap-2">
+          <RefreshCw className="mt-0.5 size-4 shrink-0 text-blue-500" />
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold">Set recurring schedule</h2>
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{todo.title}</p>
+          </div>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-2">
+          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border px-3 py-2.5 transition-colors hover:bg-muted">
+            <input
+              type="radio"
+              name="type"
+              value="days"
+              checked={type === "days"}
+              onChange={() => setType("days")}
+              className="accent-primary"
+            />
+            <span className="flex-1 text-sm">Every</span>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={days}
+              onChange={(e) => setDays(e.target.value)}
+              onClick={() => setType("days")}
+              className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-center text-sm outline-none focus:ring-2 focus:ring-ring/50"
+            />
+            <span className="text-sm text-muted-foreground">days</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border px-3 py-2.5 transition-colors hover:bg-muted">
+            <input
+              type="radio"
+              name="type"
+              value="monthly"
+              checked={type === "monthly"}
+              onChange={() => setType("monthly")}
+              className="accent-primary"
+            />
+            <span className="flex-1 text-sm">On day</span>
+            <input
+              type="number"
+              min={1}
+              max={31}
+              value={dom}
+              onChange={(e) => setDom(e.target.value)}
+              onClick={() => setType("monthly")}
+              className="w-14 rounded-lg border border-border bg-background px-2 py-1 text-center text-sm outline-none focus:ring-2 focus:ring-ring/50"
+            />
+            <span className="text-sm text-muted-foreground">of each month</span>
+          </label>
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-xl border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="flex-1 rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+            >
+              Create
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   )
 }

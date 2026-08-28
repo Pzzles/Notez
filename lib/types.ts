@@ -19,6 +19,21 @@ export type Todo = {
   persistent?: boolean
   paused?: boolean
   completedAt?: number
+  recurringRuleId?: string
+  instanceDue?: number
+}
+
+export type RecurringRule = {
+  id: string
+  title: string
+  priority: Priority
+  subtasks: Subtask[]
+  frequencyDays?: number
+  dayOfMonth?: number
+  nextDue: number
+  pausedUntil?: number
+  active: boolean
+  createdAt: number
 }
 
 export type HistoryOutcome = "done" | "cancelled"

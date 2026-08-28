@@ -12,6 +12,7 @@ import {
   FileText,
   GripVertical,
   Loader2,
+  Lock,
   Mic,
   MicOff,
   MoreHorizontal,
@@ -19,6 +20,7 @@ import {
   Pencil,
   Play,
   Plus,
+  RefreshCw,
   Repeat,
   Trash2,
   X,
@@ -92,6 +94,9 @@ type TodoItemProps = {
   onSaveAsTemplate: (title: string, priority: Priority) => void
   onTogglePersistent: (id: string) => void
   onUpdateNote: (id: string, notes: string) => void
+  isLocked?: boolean
+  onSetRecurring?: (id: string) => void
+  onRemoveRecurring?: (id: string) => void
 }
 
 export function TodoItem({
@@ -107,6 +112,9 @@ export function TodoItem({
   onSaveAsTemplate,
   onTogglePersistent,
   onUpdateNote,
+  isLocked,
+  onSetRecurring,
+  onRemoveRecurring,
 }: TodoItemProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(todo.title)
@@ -274,17 +282,22 @@ export function TodoItem({
           type="button"
           role="checkbox"
           aria-checked={todo.completed}
-          aria-label={todo.persistent ? "Disable persistence to mark as done" : todo.completed ? "Mark as not done" : "Mark as done"}
-          onClick={() => !todo.persistent && onToggle(todo.id)}
-          disabled={todo.persistent}
+          aria-label={
+            todo.persistent ? "Disable persistence to mark as done"
+            : isLocked ? "Complete older instances first"
+            : todo.completed ? "Mark as not done"
+            : "Mark as done"
+          }
+          onClick={() => !todo.persistent && !isLocked && onToggle(todo.id)}
+          disabled={todo.persistent || !!isLocked}
           initial={todo.completed ? { scale: 0.7 } : false}
           animate={{ scale: 1 }}
           transition={{ type: "spring", stiffness: 500, damping: 18 }}
           className={cn(
             "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-            todo.persistent && "cursor-not-allowed opacity-40",
-            !todo.persistent && todo.completed && "border-primary bg-primary text-primary-foreground",
-            !todo.persistent && !todo.completed && "border-muted-foreground/40 hover:border-primary",
+            (todo.persistent || isLocked) && "cursor-not-allowed opacity-40",
+            !todo.persistent && !isLocked && todo.completed && "border-primary bg-primary text-primary-foreground",
+            !todo.persistent && !isLocked && !todo.completed && "border-muted-foreground/40 hover:border-primary",
           )}
         >
           {todo.completed && <Check className="size-3.5" />}
@@ -325,7 +338,7 @@ export function TodoItem({
             </span>
           )}
 
-          {/* Metadata row: due date + subtask count */}
+          {/* Metadata row: due date + subtask count + locked notice */}
           <div className="mt-1 flex flex-wrap items-center gap-2">
             {dueInfo && !todo.completed && (
               <span className={cn(
@@ -347,6 +360,12 @@ export function TodoItem({
                 <ChevronDown className={cn("size-3 transition-transform", expanded && "rotate-180")} />
               </button>
             )}
+            {isLocked && (
+              <span className="flex items-center gap-1 text-[11px] font-medium text-amber-500">
+                <Lock className="size-3" />
+                older pending
+              </span>
+            )}
           </div>
         </div>
 
@@ -367,6 +386,19 @@ export function TodoItem({
             className="mt-0.5 shrink-0 text-green-500"
           >
             <Repeat className="size-3.5" />
+          </button>
+        )}
+
+        {/* Recurring indicator */}
+        {todo.recurringRuleId && !todo.persistent && !editing && (
+          <button
+            type="button"
+            aria-label={isLocked ? "Locked — complete older instance first" : "Recurring task — manage in menu"}
+            title={isLocked ? "Locked — complete older instance first" : "Recurring task"}
+            onClick={openMenu}
+            className={cn("mt-0.5 shrink-0", isLocked ? "text-amber-500" : "text-blue-500")}
+          >
+            {isLocked ? <Lock className="size-3.5" /> : <RefreshCw className="size-3.5" />}
           </button>
         )}
 
@@ -578,6 +610,16 @@ export function TodoItem({
               icon={<Repeat className={cn("size-3.5", todo.persistent && "text-primary")} />}
               label={todo.persistent ? "Persistent (on)" : "Persistent"}
               onClick={() => { onTogglePersistent(todo.id); closeMenu() }}
+            />
+
+            <MenuItem
+              icon={<RefreshCw className={cn("size-3.5", todo.recurringRuleId && "text-blue-500")} />}
+              label={todo.recurringRuleId ? "Remove recurring" : "Set as recurring"}
+              onClick={() => {
+                if (todo.recurringRuleId) { onRemoveRecurring?.(todo.id) }
+                else { onSetRecurring?.(todo.id) }
+                closeMenu()
+              }}
             />
 
             <MenuItem
