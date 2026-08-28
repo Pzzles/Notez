@@ -6,9 +6,12 @@ import { useMemo, useState } from "react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { useToast } from "@/components/toast"
 import { useHistory } from "@/hooks/use-history"
+import { useMonthlyStats } from "@/hooks/use-monthly-stats"
+import type { MonthStats } from "@/hooks/use-monthly-stats"
 import { cn } from "@/lib/utils"
 import type { HistoryItem, HistoryOutcome } from "@/lib/types"
 
+type HistoryView = "tasks" | "commitment"
 type HistoryFilter = "all" | HistoryOutcome
 
 const FILTERS: { value: HistoryFilter; label: string }[] = [
@@ -19,6 +22,8 @@ const FILTERS: { value: HistoryFilter; label: string }[] = [
 
 export function HistoryApp() {
   const { items, hydrated, restoreItem } = useHistory()
+  const { months, hydrated: statsHydrated } = useMonthlyStats()
+  const [view, setView] = useState<HistoryView>("tasks")
   const [filter, setFilter] = useState<HistoryFilter>("all")
   const [search, setSearch] = useState("")
   const [restoringId, setRestoringId] = useState<string | null>(null)
@@ -86,59 +91,140 @@ export function HistoryApp() {
           </div>
         </section>
 
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="inline-flex w-fit rounded-xl border border-border bg-card p-1 shadow-sm">
-            {FILTERS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setFilter(option.value)}
-                aria-pressed={filter === option.value}
-                className={cn(
-                  "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-                  filter === option.value
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search old tasks and steps…"
-              aria-label="Search task history"
-              className="h-9 w-full rounded-xl border border-border bg-card pl-9 pr-3 text-xs outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/40"
-            />
-          </div>
+        {/* View toggle */}
+        <div className="mt-5 inline-flex w-fit rounded-xl border border-border bg-card p-1 shadow-sm">
+          {(["tasks", "commitment"] as HistoryView[]).map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              aria-pressed={view === v}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-medium capitalize transition-colors",
+                view === v
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {v}
+            </button>
+          ))}
         </div>
 
-        <div className="mt-4">
-          {!hydrated ? (
-            <HistorySkeleton />
-          ) : visible.length === 0 ? (
-            <EmptyHistory hasItems={items.length > 0} search={search} />
-          ) : (
-            <ul className="flex flex-col gap-2">
-              <AnimatePresence initial={false}>
-                {visible.map((item) => (
-                  <HistoryRow
-                    key={`${item.source}-${item.id}`}
-                    item={item}
-                    restoring={restoringId === item.id}
-                    onRestore={() => handleRestore(item)}
-                  />
+        {view === "tasks" ? (
+          <>
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="inline-flex w-fit rounded-xl border border-border bg-card p-1 shadow-sm">
+                {FILTERS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setFilter(option.value)}
+                    aria-pressed={filter === option.value}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                      filter === option.value
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    {option.label}
+                  </button>
                 ))}
-              </AnimatePresence>
-            </ul>
-          )}
-        </div>
+              </div>
+
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search old tasks and steps…"
+                  aria-label="Search task history"
+                  className="h-9 w-full rounded-xl border border-border bg-card pl-9 pr-3 text-xs outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring/40"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              {!hydrated ? (
+                <HistorySkeleton />
+              ) : visible.length === 0 ? (
+                <EmptyHistory hasItems={items.length > 0} search={search} />
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  <AnimatePresence initial={false}>
+                    {visible.map((item) => (
+                      <HistoryRow
+                        key={`${item.source}-${item.id}`}
+                        item={item}
+                        restoring={restoringId === item.id}
+                        onRestore={() => handleRestore(item)}
+                      />
+                    ))}
+                  </AnimatePresence>
+                </ul>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="mt-4">
+            {!statsHydrated ? (
+              <HistorySkeleton />
+            ) : months.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border py-16 text-center">
+                <p className="text-sm text-muted-foreground">No monthly data yet. Complete or cancel tasks to start tracking.</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {months.map((m) => (
+                  <MonthRow key={m.month} month={m} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </main>
+    </div>
+  )
+}
+
+function MonthRow({ month }: { month: MonthStats }) {
+  const total = month.completed + month.cancelled
+  const rate = total > 0 ? Math.round((month.completed / total) * 100) : 0
+  const label = new Date(`${month.month}-02`).toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  })
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium">{label}</span>
+        <span
+          className={cn(
+            "font-mono text-sm font-semibold tabular-nums",
+            rate >= 80 ? "text-green-500" : rate >= 50 ? "text-amber-500" : "text-destructive",
+          )}
+        >
+          {rate}%
+        </span>
+      </div>
+      <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+        <span>{month.completed} done</span>
+        <span aria-hidden="true">·</span>
+        <span>{month.cancelled} cancelled</span>
+        <span aria-hidden="true">·</span>
+        <span>{total} total</span>
+      </div>
+      <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn(
+            "h-full rounded-full transition-all duration-500",
+            rate >= 80 ? "bg-green-500" : rate >= 50 ? "bg-amber-500" : "bg-destructive",
+          )}
+          style={{ width: `${rate}%` }}
+        />
+      </div>
     </div>
   )
 }
@@ -220,7 +306,7 @@ function Count({ value, label }: { value: number; label: string }) {
 
 function HistorySkeleton() {
   return (
-    <div className="flex flex-col gap-2" aria-label="Loading task history">
+    <div className="flex flex-col gap-2" aria-label="Loading">
       {[0, 1, 2].map((item) => (
         <div key={item} className="h-[76px] animate-pulse rounded-2xl border border-border bg-card" />
       ))}
@@ -230,7 +316,7 @@ function HistorySkeleton() {
 
 function EmptyHistory({ hasItems, search }: { hasItems: boolean; search: string }) {
   const message = search
-    ? `No history matches “${search}”.`
+    ? `No history matches "${search}".`
     : hasItems
       ? "No tasks in this category."
       : "Completed and cancelled tasks will collect here."

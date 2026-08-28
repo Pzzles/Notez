@@ -18,7 +18,11 @@ import {
 import { db } from "@/lib/firebase"
 import type { Priority, Subtask, Todo } from "@/lib/types"
 
-const statsRef = () => doc(db, "stats", "main")
+function monthKey() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+const statsRef = () => doc(db, "stats", monthKey())
 
 type DbDoc = {
   id: string

@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { AnimatePresence, motion } from "framer-motion"
-import { Archive, Bell, CalendarClock, ChevronDown, ListTodo, RefreshCw, Repeat } from "lucide-react"
+import { Archive, Bell, CalendarClock, ChevronDown, Infinity, ListTodo, RefreshCw } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { FilterBar } from "@/components/filter-bar"
 import { NextMove } from "@/components/next-move"
@@ -366,7 +366,7 @@ export function TodoApp() {
                 {persistentVisible.length > 0 && (
                   <div className="mb-3">
                     <div className="mb-1.5 flex items-center gap-2 px-1">
-                      <Repeat className="size-3.5 shrink-0 text-green-500" />
+                      <Infinity className="size-3.5 shrink-0 text-green-500" />
                       <span className="flex-1 text-[10px] font-semibold uppercase tracking-widest text-green-600 dark:text-green-400">
                         Persistent
                       </span>
@@ -627,7 +627,7 @@ function CommitmentStats({ completed, cancelled }: { completed: number; cancelle
   return (
     <div className="rounded-xl border border-panel-foreground/10 bg-panel-foreground/5 px-3 py-2.5">
       <div className="mb-2 text-[10px] font-medium uppercase tracking-widest text-panel-foreground/50">
-        Commitment
+        Commitment · this month
       </div>
       <div className="mb-2.5 flex items-center gap-1 text-[11px] text-panel-foreground/70">
         <span className="font-mono font-semibold tabular-nums text-panel-foreground">{completed}</span>
