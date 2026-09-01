@@ -16,11 +16,12 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { AnimatePresence, motion } from "framer-motion"
-import { Archive, Bell, CalendarClock, ChevronDown, Infinity, ListTodo, RefreshCw } from "lucide-react"
+import { Archive, Bell, CalendarClock, ChevronDown, Infinity, ListTodo, RefreshCw, ShoppingCart } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { FilterBar } from "@/components/filter-bar"
 import { NextMove } from "@/components/next-move"
 import { ProgressRing } from "@/components/progress-ring"
+import { ShoppingList } from "@/components/shopping-list"
 import { StandupGenerator } from "@/components/standup-generator"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { TodoInput } from "@/components/todo-input"
@@ -153,6 +154,7 @@ export function TodoApp() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
+  const [mode, setMode] = useState<"tasks" | "shopping">("tasks")
   const [persistentExpanded, setPersistentExpanded] = useState(true)
   const [recurringSetupTodo, setRecurringSetupTodo] = useState<Todo | null>(null)
 
@@ -291,6 +293,40 @@ export function TodoApp() {
 
         {/* ── Task workspace ────────────────────────────────────── */}
         <div className="flex flex-1 flex-col p-4 sm:p-8">
+          {/* Mode toggle */}
+          <div className="mb-4 flex gap-1 rounded-xl border border-border bg-muted/40 p-1">
+            <button
+              type="button"
+              onClick={() => setMode("tasks")}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-sm font-medium transition-colors",
+                mode === "tasks"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <ListTodo className="size-4" />
+              Tasks
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("shopping")}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-sm font-medium transition-colors",
+                mode === "shopping"
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <ShoppingCart className="size-4" />
+              Shopping
+            </button>
+          </div>
+
+          {mode === "shopping" ? (
+            <ShoppingList />
+          ) : (
+          <>
           <div className="flex flex-col gap-2" suppressHydrationWarning>
             <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
@@ -464,6 +500,8 @@ export function TodoApp() {
           <p className="mt-2 text-center text-xs text-muted-foreground lg:hidden">
             Real-time sync · drag to reorder
           </p>
+          </>
+          )}
         </div>
 
       </div>

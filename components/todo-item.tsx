@@ -12,6 +12,7 @@ import {
   FileText,
   GripVertical,
   Loader2,
+  Infinity,
   Lock,
   Mic,
   MicOff,
@@ -21,7 +22,6 @@ import {
   Play,
   Plus,
   RefreshCw,
-  Repeat,
   Trash2,
   X,
 } from "lucide-react"
@@ -385,7 +385,7 @@ export function TodoItem({
             onClick={openMenu}
             className="mt-0.5 shrink-0 text-green-500"
           >
-            <Repeat className="size-3.5" />
+            <Infinity className="size-3.5" />
           </button>
         )}
 
@@ -607,7 +607,7 @@ export function TodoItem({
             />
 
             <MenuItem
-              icon={<Repeat className={cn("size-3.5", todo.persistent && "text-primary")} />}
+              icon={<Infinity className={cn("size-3.5", todo.persistent && "text-primary")} />}
               label={todo.persistent ? "Persistent (on)" : "Persistent"}
               onClick={() => { onTogglePersistent(todo.id); closeMenu() }}
             />

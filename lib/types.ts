@@ -51,3 +51,20 @@ export type Template = {
   title: string
   priority: Priority
 }
+
+export type ShoppingItem = {
+  id: string
+  name: string
+  quantity: number
+  price: number
+  checked: boolean
+  createdAt: number
+  order: number
+}
+
+export type GroceryFavorite = {
+  id: string
+  name: string
+  price: number
+  createdAt: number
+}

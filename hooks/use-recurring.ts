@@ -40,7 +40,7 @@ function fromRule(d: DbRule): RecurringRule {
     nextDue: d.nextDue.toMillis(),
     pausedUntil: d.pausedUntil?.toMillis() ?? undefined,
     active: d.active,
-    createdAt: d.createdAt.toMillis(),
+    createdAt: d.createdAt?.toMillis() ?? Date.now(),
   }
 }
 
