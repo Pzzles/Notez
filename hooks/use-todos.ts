@@ -18,7 +18,11 @@ import {
 import { db } from "@/lib/firebase"
 import type { Priority, Subtask, Todo } from "@/lib/types"
 
-const statsRef = () => doc(db, "stats", "main")
+function monthKey() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+const statsRef = () => doc(db, "stats", monthKey())
 
 type DbDoc = {
   id: string
@@ -32,6 +36,8 @@ type DbDoc = {
   persistent?: boolean | null
   paused?: boolean | null
   completedAt?: Timestamp | null
+  recurringRuleId?: string | null
+  instanceDue?: number | null
 }
 
 function fromDoc(d: DbDoc): Todo {
@@ -48,6 +54,8 @@ function fromDoc(d: DbDoc): Todo {
     persistent: d.persistent ?? false,
     paused: d.paused ?? false,
     completedAt: d.completedAt?.toMillis(),
+    recurringRuleId: d.recurringRuleId ?? undefined,
+    instanceDue: d.instanceDue ?? undefined,
   }
 }
 
@@ -187,6 +195,10 @@ export function useTodos() {
     updateDoc(doc(db, "todos", todoId), { notes }).catch(console.error)
   }, [])
 
+  const clearRecurringFromTodo = useCallback((todoId: string) => {
+    updateDoc(doc(db, "todos", todoId), { recurringRuleId: null, instanceDue: null }).catch(console.error)
+  }, [])
+
   const addSubtask = useCallback((todoId: string, title: string) => {
     const trimmed = title.trim()
     if (!trimmed) return
@@ -226,6 +238,7 @@ export function useTodos() {
     pauseTodo,
     reorderTodos,
     updateNote,
+    clearRecurringFromTodo,
     addSubtask,
     toggleSubtask,
     removeSubtask,
