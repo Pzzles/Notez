@@ -395,7 +395,13 @@ export function TodoApp() {
           )}
 
           <main className="mt-4 min-h-[200px] flex-1">
-            {!hydrated ? null : visible.length === 0 ? (
+            {!hydrated ? (
+              <div className="flex flex-col gap-2 animate-pulse">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-14 rounded-2xl bg-muted/60" />
+                ))}
+              </div>
+            ) : visible.length === 0 ? (
               <EmptyState hasTodos={todos.length > 0} filter={filter} search={search} />
             ) : (
               <>
@@ -541,6 +547,7 @@ function EmptyState({ hasTodos, filter, search }: { hasTodos: boolean; filter: F
   else if (filter === "paused") message = "Nothing paused — your board is clear."
   else if (hasTodos && filter === "active") message = "Nothing active — you're all caught up."
   else if (hasTodos && filter === "completed") message = "No completed tasks yet."
+  else if (hasTodos) message = "All tasks are paused — switch to Paused to see them."
 
   return (
     <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-dashed border-border py-16 text-center">

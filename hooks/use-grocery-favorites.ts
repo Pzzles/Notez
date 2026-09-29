@@ -38,10 +38,17 @@ export function useGroceryFavorites() {
 
   useEffect(() => {
     const q = query(collection(db, "grocery-favorites"), orderBy("name", "asc"))
-    const unsub = onSnapshot(q, (snap) => {
-      setFavorites(snap.docs.map((d) => fromDoc({ id: d.id, ...d.data() } as DbDoc)))
-      setHydrated(true)
-    })
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setFavorites(snap.docs.map((d) => fromDoc({ id: d.id, ...d.data() } as DbDoc)))
+        setHydrated(true)
+      },
+      (err) => {
+        console.error("[Firestore] grocery-favorites snapshot failed:", err)
+        setHydrated(true)
+      },
+    )
     return unsub
   }, [])
 

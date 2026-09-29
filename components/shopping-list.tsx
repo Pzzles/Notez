@@ -1,8 +1,9 @@
 "use client"
 
 import { AnimatePresence, motion } from "framer-motion"
-import { Check, Plus, ShoppingCart, Star, Trash2, X } from "lucide-react"
+import { Check, Plus, Scale, ShoppingCart, Star, Trash2, X } from "lucide-react"
 import { useRef, useState } from "react"
+import { PriceComparator } from "@/components/price-comparator"
 import { ShoppingListParser } from "@/components/shopping-list-parser"
 import { useToast } from "@/components/toast"
 import { useGroceryFavorites } from "@/hooks/use-grocery-favorites"
@@ -14,7 +15,7 @@ export function ShoppingList() {
   const { items, hydrated, addItem, toggleItem, removeItem, clearAll } = useShopping()
   const { favorites, saveFavorite, updateFavoritePrice, removeFavorite } = useGroceryFavorites()
   const toast = useToast()
-  const [view, setView] = useState<"list" | "favourites">("list")
+  const [view, setView] = useState<"list" | "favourites" | "compare">("list")
   const [name, setName] = useState("")
   const [quantity, setQuantity] = useState("1")
   const [price, setPrice] = useState("")
@@ -85,9 +86,24 @@ export function ShoppingList() {
             </span>
           )}
         </button>
+        <button
+          type="button"
+          onClick={() => setView("compare")}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium transition-colors",
+            view === "compare"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Scale className="size-3.5" />
+          Compare
+        </button>
       </div>
 
-      {view === "favourites" ? (
+      {view === "compare" ? (
+        <PriceComparator />
+      ) : view === "favourites" ? (
         <FavouritesList
           favorites={favorites}
           onAddToCart={(fav) => { addItem(fav.name, 1, fav.price); toast.success(`${fav.name} added`); setView("list") }}

@@ -46,10 +46,17 @@ export function useShopping() {
 
   useEffect(() => {
     const q = query(collection(db, "shopping-items"), orderBy("createdAt", "asc"))
-    const unsub = onSnapshot(q, (snap) => {
-      setItems(snap.docs.map((d) => fromDoc({ id: d.id, ...d.data() } as DbDoc)))
-      setHydrated(true)
-    })
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setItems(snap.docs.map((d) => fromDoc({ id: d.id, ...d.data() } as DbDoc)))
+        setHydrated(true)
+      },
+      (err) => {
+        console.error("[Firestore] shopping snapshot failed:", err)
+        setHydrated(true)
+      },
+    )
     return unsub
   }, [])
 
