@@ -33,6 +33,7 @@ type DbDoc = {
   dueDate?: number | null
   order?: number | null
   subtasks?: Subtask[] | null
+  notes?: string | null
   persistent?: boolean | null
   paused?: boolean | null
   completedAt?: Timestamp | null
@@ -51,6 +52,7 @@ function fromDoc(d: DbDoc): Todo {
     dueDate: d.dueDate ?? undefined,
     order: d.order ?? -createdAt,
     subtasks: d.subtasks ?? [],
+    notes: d.notes ?? undefined,
     persistent: d.persistent ?? false,
     paused: d.paused ?? false,
     completedAt: d.completedAt?.toMillis(),
